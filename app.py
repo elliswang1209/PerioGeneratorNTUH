@@ -172,17 +172,13 @@ st.sidebar.write("---")
 st.sidebar.info("💡 **臨床排版小提示**\n下顎牙齒自動採取 B ➡️ L 視野排序；第二、三象限自動進行解剖標籤與數據鏡射。")
 
 # 網頁主要內容
-st.title("🦷 牙周專科 Progress Note 自動生成器")
+st.title("🦷Perio Generator for NTUH")
 st.markdown("""
-這個系統專為牙醫與實習醫師設計。請將從系統導出的牙周紀錄 **輸入型 CSV 檔案** 拖放到下方區塊。
-系統將自動執行：
-1. **現存牙位分析**（讀取 Missing 橫列並精準挖空）
-2. **數據臨床校正**（四象限鏡射與上下排由內而外翻轉）
-3. **自動剔除缺失牙**的病變指標。
+可以把 Charting Data 轉換成病歷的文字格式
 """)
 
 # 建立檔案上傳元件 (File Uploader)
-uploaded_file = st.file_uploader("📂 請上傳牙周資料表 CSV 檔案", type=["csv"])
+uploaded_file = st.file_uploader("📂 請上傳轉換成為「CSV檔案格式」的 Charting Excel", type=["csv"])
 
 if uploaded_file is not None:
     try:
