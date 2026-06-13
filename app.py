@@ -226,10 +226,11 @@ if uploaded_file is not None:
         
         # 🌟 末端按鍵：生成下一位（清除 Panel 數據與上傳檔案）
         if st.button("🔄 生成下一位（清除目前資料）", type="primary", use_container_width=True):
-            # 清除暫存與快取
-            st.cache_data.clear()
+            
             # 利用 Streamlit 的 rerun 機制重整網頁，完全回復初始上傳狀態
             st.rerun()
+            # 清除暫存與快取
+            st.cache_data.clear()
             
     except Exception as e:
         st.error(f"❌ 檔案解析失敗。請確認該 CSV 的結構是否正確。詳細錯誤：{e}")
