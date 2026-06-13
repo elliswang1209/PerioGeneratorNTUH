@@ -170,7 +170,7 @@ def print_furcation_summary(df, missing_teeth):
 
 st.set_page_config(page_title="牙周病歷自動生成器", page_icon="🦷", layout="centered")
 
-st.title("🦷 Perio Generator for NTUH")
+st.title("🦷 Perio Generator")
 st.markdown("可以把 Charting Data 轉換成病歷的文字格式。")
 
 # 🌟 為上傳元件加上 key，以便後續一鍵清除
@@ -215,22 +215,12 @@ if uploaded_file is not None:
             
         final_note = output_buffer.getvalue()
         
-        st.success("🎉 病歷文字成功生成！")
-        st.subheader("📋 臨床 Progress Note 文字")
-        
-        # 🌟 換回 st.code：不可編輯、格式固定、右上角自帶一鍵複製按鈕
+        st.success("成功生成！")
+        st.subheader("📋 Objective")
+    
         st.code(final_note, language="text")
-        
         st.write("") # 增加一些垂直間距
         st.write("---")
-        
-        # 🌟 末端按鍵：生成下一位（清除 Panel 數據與上傳檔案）
-        if st.button("🔄 生成下一位（清除目前資料）", type="primary", use_container_width=True):
-            
-            # 利用 Streamlit 的 rerun 機制重整網頁，完全回復初始上傳狀態
-            st.rerun()
-            # 清除暫存與快取
-            st.cache_data.clear()
             
     except Exception as e:
         st.error(f"❌ 檔案解析失敗。請確認該 CSV 的結構是否正確。詳細錯誤：{e}")
