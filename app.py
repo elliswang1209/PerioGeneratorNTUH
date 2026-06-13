@@ -159,25 +159,16 @@ def print_furcation_summary(df, missing_teeth):
 
 
 # ============================================================
-# 2. Streamlit 前端介面美化設計
+# 2. Streamlit 前端介面設計 (無側邊欄設定版)
 # ============================================================
 
-# 設定網頁標題與寬度模式
+# 設定網頁標題與寬度（完全移除側邊欄，保持全寬/中置清爽感）
 st.set_page_config(page_title="牙周病歷自動生成器", page_icon="🦷", layout="centered")
 
-# 側邊欄控制元件（Sidebar）
-st.sidebar.header("⚙️ 臨床排版設定")
-ui_gap = st.sidebar.slider("異常牙齒間距 (Gap Spaces)", min_value=4, max_value=12, value=6, step=1)
-st.sidebar.write("---")
-st.sidebar.info("💡 **臨床排版小提示**\n下顎牙齒自動採取 B ➡️ L 視野排序；第二、三象限自動進行解剖標籤與數據鏡射。")
+st.title("🦷 Perio Generator for NTUH")
+st.markdown("可以把 Charting Data 轉換成病歷的文字格式。")
 
-# 網頁主要內容
-st.title("🦷Perio Generator for NTUH")
-st.markdown("""
-可以把 Charting Data 轉換成病歷的文字格式
-""")
-
-# 建立檔案上傳元件 (File Uploader)
+# 建立檔案上傳元件
 uploaded_file = st.file_uploader("📂 請上傳轉換成為「CSV檔案格式」的 Charting Excel", type=["csv"])
 
 if uploaded_file is not None:
@@ -185,7 +176,7 @@ if uploaded_file is not None:
         # 讀取上傳的暫存檔案
         df_raw = pd.read_csv(uploaded_file, header=None, dtype=str).fillna("")
         
-        # 執行演算法
+        # 執行牙周核心演算
         tooth_rows_idx = find_tooth_rows(df_raw)
         missing_rows_idx = find_missing_rows(df_raw)
         missing_teeth = get_missing_teeth_set(df_raw, tooth_rows_idx, missing_rows_idx)
@@ -199,7 +190,7 @@ if uploaded_file is not None:
             [41, 42, 43, 44, 45, 46, 47, 48],
         ]
         
-        # 使用 StringIO 捕捉輸出的 Progress Note
+        # 使用 StringIO 捕捉輸出的 Progress Note (字距固定為最穩定的 gap=6)
         output_buffer = io.StringIO()
         with redirect_stdout(output_buffer):
             print(generate_present_dentition(df_raw, tooth_rows_idx, missing_teeth))
@@ -207,7 +198,7 @@ if uploaded_file is not None:
             print(" 2. Full mouth general calculus and plaque deposition")
             print("")
             
-            pd_report_str = get_flagged_teeth_string(records, ordered_groups, gap=ui_gap)
+            pd_report_str = get_flagged_teeth_string(records, ordered_groups, gap=6)
             print(pd_report_str.rstrip())
             print("")
             
@@ -219,15 +210,19 @@ if uploaded_file is not None:
             
         final_note = output_buffer.getvalue()
         
-        # 網頁視覺效果反饋
         st.success("🎉 病歷文字成功生成！")
+        st.subheader("📋 臨床 Progress Note 文字（可直接在此處編輯修改）")
         
-        st.subheader("📋 臨床 Progress Note 文字（可直接複製）")
+        # 🌟 核心修正：改用 st.text_area 實現「可任意編輯」+「等寬字體」+「自帶一鍵複製」
+        # height=450 可以確保整份病歷大致能完整呈現，不需頻繁滾動
+        edited_note = st.text_area(
+            label="病歷編輯輸入框",
+            value=final_note,
+            height=450,
+            label_visibility="collapsed"  # 隱藏預設標籤以保持版面乾淨
+        )
         
-        # 利用 st.code 呈現，除了防止排版跑掉，右上角還會自動出現「一鍵複製」按鈕
-        st.code(final_note, language="text")
-        
-        st.info("⬆️ 點擊上方灰色框框右上角的圖示，即可將整段病歷文字複製到剪貼簿。")
+        st.info("💡 **臨床操作提示**：你可以直接在上方框內修改任何文字。編輯完成後，點擊文字框**右上方的小圖示**即可一鍵複製整篇病歷！")
         
     except Exception as e:
         st.error(f"❌ 檔案解析失敗。請確認該 CSV 的結構是否包含 'Tooth'、'Missing' 以及 'PD' 橫列。詳細錯誤：{e}")
