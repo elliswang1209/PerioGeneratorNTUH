@@ -97,15 +97,21 @@ def parse_furcation(df, missing_teeth):
     f_rows = find_furcation_rows(df)
     if len(f_rows) < 2: return {}
     furcation = {}
+    
+    # Upper
+    upper_prefered_order = ["M", "B", "D"]
     for tooth, col in get_tooth_start_columns(df, tooth_rows[0]).items():
         if tooth in missing_teeth: continue
         raw = {clean_cell(df.iloc[f_rows[0]["label_row"], col + o]).upper(): clean_cell(df.iloc[f_rows[0]["value_row"], col + o]) for o in range(3)}
-        text = "".join([f"{l}{raw[l]}" for l in ["M", "B", "D", "L"] if l in raw and raw[l] in ["1", "2", "3"]])
+        text = "".join([f"{l}{raw[l]}" for l in upper_prefered_order + ["L"] if l in raw and raw[l] in ["1", "2", "3"]])
         if text: furcation[tooth] = text
+        
+    # Lower
+    lower_prefered_order = ["B", "L"]
     for tooth, col in get_tooth_start_columns(df, tooth_rows[-1]).items():
         if tooth in missing_teeth: continue
         raw = {clean_cell(df.iloc[f_rows[-1]["label_row"], col + o]).upper(): clean_cell(df.iloc[f_rows[-1]["value_row"], col + o]) for o in range(3)}
-        text = "".join([f"{l}{raw[l]}" for l in ["B", "L", "M", "D"] if l in raw and raw[l] in ["1", "2", "3"]])
+        text = "".join([f"{l}{raw[l]}" for l in lower_prefered_order + ["M", "D"] if l in raw and raw[l] in ["1", "2", "3"]])
         if text: furcation[tooth] = text
     return furcation
 
@@ -159,30 +165,30 @@ def print_furcation_summary(df, missing_teeth):
 
 
 # ============================================================
-# 2. Streamlit 前端介面設計 (無側邊欄設定版)
+# 2. Streamlit 前端介面設計 (寫死唯讀版 + 清除功能)
 # ============================================================
 
-# 設定網頁標題與寬度（完全移除側邊欄，保持全寬/中置清爽感）
 st.set_page_config(page_title="牙周病歷自動生成器", page_icon="🦷", layout="centered")
 
 st.title("🦷 Perio Generator for NTUH")
 st.markdown("可以把 Charting Data 轉換成病歷的文字格式。")
 
-# 建立檔案上傳元件
-uploaded_file = st.file_uploader("📂 請上傳轉換成為「CSV檔案格式」的 Charting Excel", type=["csv"])
+# 🌟 為上傳元件加上 key，以便後續一鍵清除
+uploaded_file = st.file_uploader(
+    "📂 請上傳轉換成為「CSV檔案格式」的 Charting Excel", 
+    type=["csv"],
+    key="perio_csv_uploader"
+)
 
 if uploaded_file is not None:
     try:
-        # 讀取上傳的暫存檔案
         df_raw = pd.read_csv(uploaded_file, header=None, dtype=str).fillna("")
         
-        # 執行牙周核心演算
         tooth_rows_idx = find_tooth_rows(df_raw)
         missing_rows_idx = find_missing_rows(df_raw)
         missing_teeth = get_missing_teeth_set(df_raw, tooth_rows_idx, missing_rows_idx)
         records = parse_periodontal_pd(df_raw, missing_teeth)
         
-        # 牙位呈現序列
         ordered_groups = [
             [18, 17, 16, 15, 14, 13, 12, 11],
             [21, 22, 23, 24, 25, 26, 27, 28],
@@ -190,7 +196,6 @@ if uploaded_file is not None:
             [41, 42, 43, 44, 45, 46, 47, 48],
         ]
         
-        # 使用 StringIO 捕捉輸出的 Progress Note (字距固定為最穩定的 gap=6)
         output_buffer = io.StringIO()
         with redirect_stdout(output_buffer):
             print(generate_present_dentition(df_raw, tooth_rows_idx, missing_teeth))
@@ -211,18 +216,20 @@ if uploaded_file is not None:
         final_note = output_buffer.getvalue()
         
         st.success("🎉 病歷文字成功生成！")
-        st.subheader("📋 臨床 Progress Note 文字（可直接在此處編輯修改）")
+        st.subheader("📋 臨床 Progress Note 文字")
         
-        # 🌟 核心修正：改用 st.text_area 實現「可任意編輯」+「等寬字體」+「自帶一鍵複製」
-        # height=450 可以確保整份病歷大致能完整呈現，不需頻繁滾動
-        edited_note = st.text_area(
-            label="病歷編輯輸入框",
-            value=final_note,
-            height=450,
-            label_visibility="collapsed"  # 隱藏預設標籤以保持版面乾淨
-        )
+        # 🌟 換回 st.code：不可編輯、格式固定、右上角自帶一鍵複製按鈕
+        st.code(final_note, language="text")
         
-        st.info("💡 **臨床操作提示**：你可以直接在上方框內修改任何文字。編輯完成後，點擊文字框**右上方的小圖示**即可一鍵複製整篇病歷！")
+        st.write("") # 增加一些垂直間距
+        st.write("---")
         
+        # 🌟 末端按鍵：生成下一位（清除 Panel 數據與上傳檔案）
+        if st.button("🔄 生成下一位（清除目前資料）", type="primary", use_container_width=True):
+            # 清除暫存與快取
+            st.cache_data.clear()
+            # 利用 Streamlit 的 rerun 機制重整網頁，完全回復初始上傳狀態
+            st.rerun()
+            
     except Exception as e:
-        st.error(f"❌ 檔案解析失敗。請確認該 CSV 的結構是否包含 'Tooth'、'Missing' 以及 'PD' 橫列。詳細錯誤：{e}")
+        st.error(f"❌ 檔案解析失敗。請確認該 CSV 的結構是否正確。詳細錯誤：{e}")
