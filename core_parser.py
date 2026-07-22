@@ -40,11 +40,12 @@ def find_missing_rows(df):
 def find_furcation_rows(df):
     furcation_rows = []
     for i in range(len(df)):
-        row_text = " ".join([clean_cell(x) for x in df.iloc[i].tolist()]).lower()
-        if "furcation" in row_text:
+        row_text = " ".join([clean_cell(df.iloc[i, c]) for c in range(df.shape[1])]).lower()
+        # 🚀 排除 "grade" 與 "scale" 等說明標題列，精確鎖定真正的 Furcation 數據標籤列
+        if "furcation" in row_text and "grade" not in row_text and "scale" not in row_text:
             furcation_rows.append({"header_row": i, "label_row": i, "value_row": i + 1})
     return furcation_rows
-
+    
 def get_three_digit_raw_list(df, row_idx, start_col):
     if row_idx is None or pd.isna(row_idx): return ["?", "?", "?"]
     values = []
