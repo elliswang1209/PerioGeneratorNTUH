@@ -1,6 +1,8 @@
 # pptx_engine.py
 """
-簡報生成引擎：支援按解剖解構分側 (Upper: Buccal/Palatal, Lower: Lingual/Buccal) 繪製 Initial 及 Comparison 簡報。
+簡報生成引擎：完全匹配專科規範之順序與對稱佈局。
+Upper: Mobility -> KM -> PD(B) -> Rec(B) -> CAL(B) -> Furcation -> PD(P) -> Rec(P) -> CAL(P)
+Lower: PD(L) -> Rec(L) -> CAL(L) -> Mobility -> KM -> PD(B) -> Rec(B) -> CAL(B) -> Furcation
 """
 from io import BytesIO
 from typing import Dict, Set, Any, List
@@ -70,7 +72,6 @@ def _remove_default_table_style(table):
         pass
 
 def create_six_sextants_presentation(df, missing_teeth: Set[int]) -> BytesIO:
-    """模式 A：生成 6 頁 Initial 六象限簡報"""
     prs = Presentation()
     prs.slide_width = Inches(config.PPT_SLIDE_WIDTH)
     prs.slide_height = Inches(config.PPT_SLIDE_HEIGHT)
@@ -86,18 +87,15 @@ def create_six_sextants_presentation(df, missing_teeth: Set[int]) -> BytesIO:
     return stream
 
 def create_comparison_presentation(df, missing_teeth: Set[int]) -> BytesIO:
-    """模式 B：生成 12 頁 (6 頁 Initial + 6 頁 Initial vs Re-eval 對比) 簡報"""
     prs = Presentation()
     prs.slide_width = Inches(config.PPT_SLIDE_WIDTH)
     prs.slide_height = Inches(config.PPT_SLIDE_HEIGHT)
     blank_layout = prs.slide_layouts[6]
 
-    # 前 6 頁：Initial Stage
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
         _draw_sextant_slide(slide, f"{sextant_name} - Initial Stage", teeth, df, missing_teeth, is_comparison=False)
 
-    # 後 6 頁：Initial vs Re-evaluation
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
         _draw_sextant_slide(slide, f"{sextant_name} - Initial vs Re-evaluation", teeth, df, missing_teeth, is_comparison=True)
@@ -131,9 +129,8 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     row_map = collect_comparison_row_indices(df)
     is_upper = (teeth[0] < 30)
 
-    # 2. 構建列結構
+    # 2. 🚀 完全匹配指定的 18/17 列項目與順序
     if not is_comparison:
-        # 單期 (Initial Only) 保持原本格式
         active_row_metas = [
             {"label": "Probing Depth (B)" if is_upper else "Probing Depth (L)", "r_key": "up_b_pd_i" if is_upper else "lo_l_pd_i", "type": "pd"},
             {"label": "Probing Depth (P)" if is_upper else "Probing Depth (B)", "r_key": "up_p_pd_i" if is_upper else "lo_b_pd_i", "type": "pd"},
@@ -145,46 +142,47 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             {"label": "Prognosis", "type": "prog"}
         ]
     else:
-        # 🚀 雙期 (Initial vs Re-evaluation) 依照 CSV 結構分區排列：
-        # 上顎：上半 Buccal -> 下半 Palatal -> 下方 Furcation & Mobility (無 Prognosis)
-        # 下顎：上半 Lingual -> 下半 Buccal -> 下方 Furcation & Mobility (無 Prognosis)
         if is_upper:
+            # 🚀 上顎 Initial + Re-eval (17 列)
             active_row_metas = [
-                # 上半部：Buccal
+                {"label": "Mobility (I)", "r_key": "up_mob_i", "type": "mob"},
+                {"label": "Mobility (R)", "r_key": "up_mob_r", "type": "mob"},
+                {"label": "Masticatory Mucosa (I)", "r_key": "up_km_i", "type": "km"},
+                {"label": "Masticatory Mucosa (R)", "r_key": "up_km_r", "type": "km"},
                 {"label": "Probing Depth (B) (I)", "r_key": "up_b_pd_i", "type": "pd"},
                 {"label": "Probing Depth (B) (R)", "r_key": "up_b_pd_r", "type": "pd"},
                 {"label": "Recession (B) (I)", "r_key": "up_b_gm_i", "type": "gm"},
                 {"label": "Recession (B) (R)", "r_key": "up_b_gm_r", "type": "gm"},
-                {"label": "Masticatory Mucosa (I)", "r_key": "up_km_i", "type": "km"},
-                {"label": "Masticatory Mucosa (R)", "r_key": "up_km_r", "type": "km"},
-                # 下半部：Palatal
+                {"label": "CAL (B) (I)", "r_key": "up_b_cal_i", "type": "cal"},
+                {"label": "CAL (B) (R)", "r_key": "up_b_cal_r", "type": "cal"},
+                {"label": "Furcation Involvement", "type": "furc"},
                 {"label": "Probing Depth (P) (I)", "r_key": "up_p_pd_i", "type": "pd"},
                 {"label": "Probing Depth (P) (R)", "r_key": "up_p_pd_r", "type": "pd"},
                 {"label": "Recession (P) (I)", "r_key": "up_p_gm_i", "type": "gm"},
                 {"label": "Recession (P) (R)", "r_key": "up_p_gm_r", "type": "gm"},
-                # 底部：Furcation & Mobility
-                {"label": "Furcation Involvement", "type": "furc"},
-                {"label": "Mobility (I)", "r_key": "up_mob_i", "type": "mob"},
-                {"label": "Mobility (R)", "r_key": "up_mob_r", "type": "mob"},
+                {"label": "CAL (P) (I)", "r_key": "up_p_cal_i", "type": "cal"},
+                {"label": "CAL (P) (R)", "r_key": "up_p_cal_r", "type": "cal"},
             ]
         else:
+            # 🚀 下顎 Initial + Re-eval (17 列)
             active_row_metas = [
-                # 上半部：Lingual
                 {"label": "Probing Depth (L) (I)", "r_key": "lo_l_pd_i", "type": "pd"},
                 {"label": "Probing Depth (L) (R)", "r_key": "lo_l_pd_r", "type": "pd"},
                 {"label": "Recession (L) (I)", "r_key": "lo_l_gm_i", "type": "gm"},
                 {"label": "Recession (L) (R)", "r_key": "lo_l_gm_r", "type": "gm"},
-                # 下半部：Buccal
+                {"label": "CAL (L) (I)", "r_key": "lo_l_cal_i", "type": "cal"},
+                {"label": "CAL (L) (R)", "r_key": "lo_l_cal_r", "type": "cal"},
+                {"label": "Mobility (I)", "r_key": "lo_mob_i", "type": "mob"},
+                {"label": "Mobility (R)", "r_key": "lo_mob_r", "type": "mob"},
+                {"label": "Masticatory Mucosa (I)", "r_key": "lo_km_i", "type": "km"},
+                {"label": "Masticatory Mucosa (R)", "r_key": "lo_km_r", "type": "km"},
                 {"label": "Probing Depth (B) (I)", "r_key": "lo_b_pd_i", "type": "pd"},
                 {"label": "Probing Depth (B) (R)", "r_key": "lo_b_pd_r", "type": "pd"},
                 {"label": "Recession (B) (I)", "r_key": "lo_b_gm_i", "type": "gm"},
                 {"label": "Recession (B) (R)", "r_key": "lo_b_gm_r", "type": "gm"},
-                {"label": "Masticatory Mucosa (I)", "r_key": "lo_km_i", "type": "km"},
-                {"label": "Masticatory Mucosa (R)", "r_key": "lo_km_r", "type": "km"},
-                # 底部：Furcation & Mobility
+                {"label": "CAL (B) (I)", "r_key": "lo_b_cal_i", "type": "cal"},
+                {"label": "CAL (B) (R)", "r_key": "lo_b_cal_r", "type": "cal"},
                 {"label": "Furcation Involvement", "type": "furc"},
-                {"label": "Mobility (I)", "r_key": "lo_mob_i", "type": "mob"},
-                {"label": "Mobility (R)", "r_key": "lo_mob_r", "type": "mob"},
             ]
 
     total_rows = 1 + len(active_row_metas)
@@ -194,12 +192,12 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
         col_width_left, col_width_data = Inches(2.2), Inches(1.8)
         row_height, top_pos = Inches(config.TABLE_ROW_HEIGHT), Inches(1.3)
     else:
-        col_width_left, col_width_data = Inches(2.0), Inches(0.9)
-        row_height, top_pos = Inches(0.35), Inches(1.2)
+        col_width_left, col_width_data = Inches(2.1), Inches(0.85)
+        row_height, top_pos = Inches(0.32), Inches(1.2)
 
     total_table_width = col_width_left + col_width_data * len(teeth)
     total_table_height = row_height * total_rows
-    left_pos = Inches(config.PPT_SLIDE_WIDTH) - total_table_width - Inches(0.5)
+    left_pos = Inches(config.PPT_SLIDE_WIDTH) - total_table_width - Inches(0.4)
 
     table_shape = slide.shapes.add_table(total_rows, total_cols, left_pos, top_pos, total_table_width, total_table_height)
     table = table_shape.table
@@ -216,19 +214,19 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     _apply_cell_density(c_t0); c_t0.fill.background()
     p_t0 = c_t0.text_frame.paragraphs[0]; p_t0.alignment = PP_ALIGN.CENTER
     r_t0 = p_t0.add_run(); r_t0.text = "Tooth"
-    r_t0.font.name, r_t0.font.size, r_t0.font.bold, r_t0.font.color.rgb = config.FONT_PRIMARY, Pt(12 if is_comparison else 14), True, text_white
+    r_t0.font.name, r_t0.font.size, r_t0.font.bold, r_t0.font.color.rgb = config.FONT_PRIMARY, Pt(11 if is_comparison else 14), True, text_white
 
     for c_i, t in enumerate(teeth):
         c_t = table.cell(0, c_i + 1); c_t.vertical_anchor = MSO_ANCHOR.MIDDLE
         _apply_cell_density(c_t); c_t.fill.background()
         p_t = c_t.text_frame.paragraphs[0]; p_t.alignment = PP_ALIGN.CENTER
         r_t = p_t.add_run(); r_t.text = str(t)
-        r_t.font.name, r_t.font.size, r_t.font.bold, r_t.font.color.rgb = config.FONT_PRIMARY, Pt(12 if is_comparison else 14), True, text_white
+        r_t.font.name, r_t.font.size, r_t.font.bold, r_t.font.color.rgb = config.FONT_PRIMARY, Pt(11 if is_comparison else 14), True, text_white
 
     f_rows = find_furcation_rows(df)
     dynamic_missing = set(missing_teeth)
 
-    # 4. 數據填充
+    # 4. 填寫資料列
     for r_i, meta in enumerate(active_row_metas):
         r_ppt = r_i + 1
         c_lbl = table.cell(r_ppt, 0); c_lbl.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -238,13 +236,12 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
         if lbl_text:
             p_lbl = c_lbl.text_frame.paragraphs[0]; p_lbl.alignment = PP_ALIGN.CENTER
             r_lbl = p_lbl.add_run(); r_lbl.text = lbl_text
-            r_lbl.font.name, r_lbl.font.size, r_lbl.font.bold, r_lbl.font.color.rgb = config.FONT_PRIMARY, Pt(10 if is_comparison else 12), True, text_white
+            r_lbl.font.name, r_lbl.font.size, r_lbl.font.bold, r_lbl.font.color.rgb = config.FONT_PRIMARY, Pt(9.5 if is_comparison else 12), True, text_white
 
         for c_i, t in enumerate(teeth):
             cell_d = table.cell(r_ppt, c_i + 1); cell_d.vertical_anchor = MSO_ANCHOR.MIDDLE
             _apply_cell_density(cell_d); cell_d.fill.background()
 
-            q = t // 10
             col = upper_cols.get(t) if is_upper else lower_cols.get(t)
             p_d = cell_d.text_frame.paragraphs[0]; p_d.alignment = PP_ALIGN.CENTER
 
@@ -252,32 +249,24 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                 m_type = meta["type"]
                 r_idx = row_map.get(meta.get("r_key"))
 
-                if m_type == "pd":
+                if m_type in ["pd", "gm", "cal"]:
                     digits = get_three_digit_raw_list(df, r_idx, col)
-                    if all(d.strip() in ['?', ''] for d in digits):
+                    if m_type == "pd" and all(d.strip() in ['?', ''] for d in digits):
                         dynamic_missing.add(t)
 
                     for d in digits:
                         display_val = clean_cell(d)
                         run = p_d.add_run(); run.text = f" {display_val} " if len(display_val)>=2 else display_val
-                        run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
-                        if display_val.isdigit() and int(display_val) >= 5:
+                        run.font.name, run.font.size = config.FONT_PRIMARY, Pt(10 if is_comparison else 14)
+                        if m_type == "pd" and display_val.isdigit() and int(display_val) >= 5:
                             run.font.bold = True; run.font.color.rgb = text_alert
                         else:
                             run.font.bold = False; run.font.color.rgb = text_white
 
-                elif m_type == "gm":
-                    digits = get_three_digit_raw_list(df, r_idx, col)
-                    for d in digits:
-                        display_val = clean_cell(d)
-                        run = p_d.add_run(); run.text = f" {display_val} " if len(display_val)>=2 else display_val
-                        run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
-                        run.font.bold, run.font.color.rgb = False, text_white
-
                 elif m_type == "km":
                     val = clean_cell(df.iloc[r_idx, col]) if r_idx is not None else "0"
                     run = p_d.add_run(); run.text = val if val!="" else "0"
-                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(10 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "furc":
@@ -289,22 +278,22 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                         extracted = "".join([f"{l}{raw_f[l]}" for l in pref if l in raw_f and raw_f[l] in ["1", "2", "3"]])
                         if extracted: text = extracted
                     run = p_d.add_run(); run.text = text
-                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(10 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "mob":
                     v = clean_cell(df.iloc[r_idx, col]) if r_idx is not None else ""
                     val = {"1": "I", "2": "II", "3": "III"}.get(v, "WNL")
                     run = p_d.add_run(); run.text = val
-                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(10 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "prog":
                     run = p_d.add_run(); run.text = "G"
-                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(10 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
-    # 5. 缺牙合併 + 對角斜線
+    # 5. 缺牙大合併 + 純白斜線
     for c_i, t in enumerate(teeth):
         if t in dynamic_missing:
             start_cell = table.cell(1, c_i + 1)
@@ -318,7 +307,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             merged.fill.background()
             _add_diagonal_strikethrough(merged)
 
-    # 6. 100% 純白邊框刷新
+    # 6. 純白邊框刷新
     for r in range(total_rows):
         for c in range(total_cols):
             _set_cell_border_to_white(table.cell(r, c))
