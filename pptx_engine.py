@@ -232,13 +232,13 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     slide_w, slide_h = config.PPT_SLIDE_WIDTH, config.PPT_SLIDE_HEIGHT
 
     if not is_comparison:
-        col_width_label = Inches(1.3)
+        col_width_label = Inches(1.5)
         col_width_stage = Inches(0)
         col_width_data  = Inches(0.8)
         top_pos = Inches(1.3)
         row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
-        col_width_label = Inches(1.3)
+        col_width_label = Inches(1.5)
         col_width_stage = Inches(0.5)
         col_width_data  = Inches(0.8)
         top_pos = Inches(0.25)
