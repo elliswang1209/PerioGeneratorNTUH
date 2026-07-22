@@ -1,5 +1,13 @@
 # pptx_engine.py
-
+"""
+簡報生成引擎：
+1. 對比表格 Data 字體一律提升至 12 Pt，標題與表頭 14 Pt，主標題 36 Pt
+2. 純化標題 (例如 Upper Right Sextant)
+3. Stage R 橘黃色顯示，項目欄同名垂直合併 (Vertical Merge)
+4. 專屬 Mobility 跨欄解析（完全相容羅馬數字 I, II, III 與阿拉伯數字 1, 2, 3）
+5. 🚀 對比模式下，若牙齒在 Stage R 任意一側 (B/L/P) 有 PD >= 5mm，整欄外框線完美高亮正紅色 (#FF0000)
+6. Initial 表格自動合併 Recession 上下兩列的標題 Cell (Col 0)
+"""
 from io import BytesIO
 from typing import Dict, Set, Any, List
 import pandas as pd
@@ -90,18 +98,19 @@ def _apply_cell_density(cell):
     cell.margin_left = Inches(0.02)
     cell.margin_right = Inches(0.02)
 
-def _set_cell_border_custom(cell, left_hex="FFFFFF", right_hex="FFFFFF", top_hex="FFFFFF", bottom_hex="FFFFFF", width_pt=1.0):
+def _set_cell_border_custom(cell, left_hex="FFFFFF", right_hex="FFFFFF", top_hex="FFFFFF", bottom_hex="FFFFFF", 
+                            left_w=1.0, right_w=1.0, top_w=1.0, bottom_w=1.0):
     tcPr = cell._tc.get_or_add_tcPr()
-    w_val = str(int(width_pt * 12700))
     
     sides = {
-        'lnL': left_hex,
-        'lnR': right_hex,
-        'lnT': top_hex,
-        'lnB': bottom_hex
+        'lnL': (left_hex, left_w),
+        'lnR': (right_hex, right_w),
+        'lnT': (top_hex, top_w),
+        'lnB': (bottom_hex, bottom_w)
     }
     
-    for side, hex_color in sides.items():
+    for side, (hex_color, width_pt) in sides.items():
+        w_val = str(int(width_pt * 12700))
         existing = tcPr.find(f'{{http://schemas.openxmlformats.org/drawingml/2006/main}}{side}')
         if existing is not None:
             tcPr.remove(existing)
@@ -308,7 +317,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     f_rows = find_furcation_rows(df)
     dynamic_missing = set(missing_teeth)
 
-    # 🚀 用於記錄各顆牙齒在 Re-eval 階段是否有任何位點 PD >= 5
+    # 記錄各顆牙齒在 Re-eval 階段是否有任何位點 PD >= 5
     teeth_with_high_pd_in_reeval = set()
 
     # 4. 資料列填寫
@@ -369,10 +378,10 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                         run.font.name = config.FONT_PRIMARY
                         run.font.size = Pt(12) if is_comparison else Pt(14)
                         
-                        # 🚀 只要是 Probing Depth 且數字 >= 5
+                        # Probing Depth 數字 >= 5
                         if m_type == "pd" and display_val.isdigit() and int(display_val) >= 5:
                             run.font.bold = True; run.font.color.rgb = text_alert
-                            # 🚀 如果是在對比表格且屬於 Stage R（包含 B 側 / P 側 / L 側），記錄該牙齒
+                            # 在對比表格且屬於 Stage R，記錄該牙齒
                             if is_comparison and stage_text.upper() == "R":
                                 teeth_with_high_pd_in_reeval.add(t)
                         else:
@@ -476,46 +485,43 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             else:
                 r += 1
 
-    # 🚀 7. 邊框刷新（高質感紅色外框線繪製機制）
-    RED_HEX = "FF0000"
-    WHITE_HEX = "FFFFFF"
+    # 🚀 7. 全表格邊框矩陣算繪 (Gridline Border Mapping)
+    # 建立垂直邊框線 (V) 與水平邊框線 (H) 的顏色與寬度矩陣
+    V_color = [["FFFFFF" for _ in range(total_cols + 1)] for _ in range(total_rows)]
+    V_width = [[1.0 for _ in range(total_cols + 1)] for _ in range(total_rows)]
 
+    H_color = [["FFFFFF" for _ in range(total_cols)] for _ in range(total_rows + 1)]
+    H_width = [[1.0 for _ in range(total_cols)] for _ in range(total_rows + 1)]
+
+    # 標記高亮牙齒欄位的外框線
+    RED_HEX = "FF0000"
     for c_i, t in enumerate(teeth):
         cell_col = data_start_col + c_i
-        is_high_pd_tooth = (is_comparison and t in teeth_with_high_pd_in_reeval and t not in dynamic_missing)
-
-        left_color = RED_HEX if is_high_pd_tooth else WHITE_HEX
-        right_color = RED_HEX if is_high_pd_tooth else WHITE_HEX
-        border_width = 2.5 if is_high_pd_tooth else 1.0
-
-        # 為當前牙齒欄位的每個 cell 設定邊框
-        for r in range(total_rows):
-            top_color = RED_HEX if (is_high_pd_tooth and r == 0) else WHITE_HEX
-            bottom_color = RED_HEX if (is_high_pd_tooth and r == total_rows - 1) else WHITE_HEX
-
-            _set_cell_border_custom(
-                table.cell(r, cell_col),
-                left_hex=left_color,
-                right_hex=right_color,
-                top_hex=top_color,
-                bottom_hex=bottom_color,
-                width_pt=border_width
-            )
-
-        # 🚀 防止相鄰左欄的右邊框覆蓋當前欄位的紅邊
-        if is_high_pd_tooth and cell_col > 0:
+        if is_comparison and (t in teeth_with_high_pd_in_reeval) and (t not in dynamic_missing):
+            # 該牙齒欄位的左線 (col) 與右線 (col + 1) 全高高亮紅線
             for r in range(total_rows):
-                _set_cell_border_custom(
-                    table.cell(r, cell_col - 1),
-                    left_hex=WHITE_HEX if cell_col - 1 == 0 else WHITE_HEX,
-                    right_hex=RED_HEX,
-                    top_hex=WHITE_HEX,
-                    bottom_hex=WHITE_HEX,
-                    width_pt=border_width
-                )
+                V_color[r][cell_col] = RED_HEX
+                V_width[r][cell_col] = 2.5
+                V_color[r][cell_col + 1] = RED_HEX
+                V_width[r][cell_col + 1] = 2.5
+            
+            # 該牙齒欄位的頂邊線 (0) 與底邊線 (total_rows) 高亮紅線
+            H_color[0][cell_col] = RED_HEX
+            H_width[0][cell_col] = 2.5
+            H_color[total_rows][cell_col] = RED_HEX
+            H_width[total_rows][cell_col] = 2.5
 
-    # 第 0 欄與 Stage 欄維持純白邊框
+    # 統一將矩陣邊框套用到所有 Cell，徹底避免衝突與覆蓋
     for r in range(total_rows):
-        _set_cell_border_custom(table.cell(r, 0), WHITE_HEX, WHITE_HEX, WHITE_HEX, WHITE_HEX, 1.0)
-        if has_stage_col:
-            _set_cell_border_custom(table.cell(r, 1), WHITE_HEX, WHITE_HEX, WHITE_HEX, WHITE_HEX, 1.0)
+        for c in range(total_cols):
+            _set_cell_border_custom(
+                table.cell(r, c),
+                left_hex=V_color[r][c],
+                right_hex=V_color[r][c + 1],
+                top_hex=H_color[r][c],
+                bottom_hex=H_color[r + 1][c],
+                left_w=V_width[r][c],
+                right_w=V_width[r][c + 1],
+                top_w=H_width[r][c],
+                bottom_w=H_width[r + 1][c]
+            )
