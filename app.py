@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 
 import config
-from core_parser import parse_periodontal_csv, find_missing_teeth
+from core_parser import find_missing_teeth
 from pptx_engine import create_six_sextants_presentation, create_comparison_presentation
 
 # 🚀 匯入獨立的 12 口內照處理模組
@@ -20,7 +20,7 @@ st.set_page_config(
 
 def render_periodontal_generator_page():
     st.header("🦷 牙周病檢查表簡報生成器 (Periodontal Chart Generator)")
-    st.caption("請上傳 Initial 及/或 Re-evaluation 的檢查 CSV 檔案，系統將自動解析並繪製高質感對比簡報。")
+    st.caption("請上傳 Initial 及/或 Re-evaluation 的檢查 CSV 檔案，系統將自動解析並繪製高質感簡報。")
 
     st.markdown("---")
     
@@ -37,7 +37,8 @@ def render_periodontal_generator_page():
             with col1:
                 st.write("**自動偵測缺牙牙號**：", sorted(list(missing_teeth)))
 
-            is_comparison = len(df) > 50 # 粗略判定是否包含 Re-evaluation
+            # 判斷是否為 Initial & Re-evaluation 對比檔 (列數 > 50 粗略判斷)
+            is_comparison = len(df) > 50 
 
             st.markdown("### 生成簡報下載")
             if is_comparison:
@@ -73,7 +74,7 @@ def main():
     if page_choice == "牙周簡報生成 (PPT)":
         render_periodontal_generator_page()
     elif page_choice == "12 口內照上傳展示 (Photos)":
-        # 🚀 導引呼叫獨立檔案 intraoral_photos.py 的主函式
+        # 🚀 導引呼叫獨立檔案 intraoral_photos.py 的頁面渲染函式
         render_intraoral_photo_page()
 
 if __name__ == "__main__":
