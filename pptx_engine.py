@@ -1,6 +1,6 @@
 # pptx_engine.py
 """
-簡報生成引擎：支援缺牙整欄合併 + 對角斜線，以及數值去除浮點數格式化。
+簡報生成引擎：支援按解剖解構分側 (Upper: Buccal/Palatal, Lower: Lingual/Buccal) 繪製 Initial 及 Comparison 簡報。
 """
 from io import BytesIO
 from typing import Dict, Set, Any, List
@@ -17,7 +17,7 @@ import config
 from core_parser import (
     find_tooth_rows, 
     get_tooth_start_columns, 
-    collect_absolute_row_indices, 
+    collect_comparison_row_indices, 
     get_three_digit_raw_list,
     clean_cell,
     find_furcation_rows
@@ -47,7 +47,6 @@ def _set_cell_border_to_white(cell):
         tcPr.append(parse_xml(f'<a:{side} {nsdecls("a")}>{border_xml}</a:{side}>'))
 
 def _add_diagonal_strikethrough(cell):
-    """🚀 為缺牙合併儲存格塗上物理 100% 純白斜對角線 (lnDiagonalDown)"""
     tcPr = cell._tc.get_or_add_tcPr()
     diagonal_xml = (
         f'<a:lnDiagonalDown {nsdecls("a")} w="12700" cmpd="s" algn="ctr">'
@@ -69,10 +68,6 @@ def _remove_default_table_style(table):
         tblPr.append(parse_xml(f'<a:tableStyleId {nsdecls("a")}>{{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}}</a:tableStyleId>'))
     except Exception:
         pass
-
-# ==============================================================================
-# 簡報直出對外接口
-# ==============================================================================
 
 def create_six_sextants_presentation(df, missing_teeth: Set[int]) -> BytesIO:
     """模式 A：生成 6 頁 Initial 六象限簡報"""
@@ -112,10 +107,6 @@ def create_comparison_presentation(df, missing_teeth: Set[int]) -> BytesIO:
     stream.seek(0)
     return stream
 
-# ==============================================================================
-# 核心繪圖與數據真實填入邏輯
-# ==============================================================================
-
 def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_teeth: Set[int], is_comparison: bool):
     slide.background.fill.solid()
     slide.background.fill.fore_color.rgb = _rgb(config.COLOR_BG_DARK)
@@ -132,35 +123,78 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     p.font.color.rgb = _rgb(config.COLOR_TITLE_WHEAT)
     p.alignment = PP_ALIGN.LEFT
 
-    # 2. 數據對照列地圖
     tooth_rows = find_tooth_rows(df)
-    if len(tooth_rows) < 2:
-        return
+    if len(tooth_rows) < 2: return
     upper_cols = get_tooth_start_columns(df, tooth_rows[0])
     lower_cols = get_tooth_start_columns(df, tooth_rows[-1])
 
-    anatomy_map_I = collect_absolute_row_indices(df, target_stage="I")
-    anatomy_map_R = collect_absolute_row_indices(df, target_stage="R") if is_comparison else {}
+    row_map = collect_comparison_row_indices(df)
+    is_upper = (teeth[0] < 30)
 
-    row_meta_single = [
-        {"type": "pd", "s_row": "Line1", "header": "Probing Depth (B)" if teeth[0] < 30 else "Probing Depth (L)"},
-        {"type": "pd", "s_row": "Line2", "header": "Probing Depth (P)" if teeth[0] < 30 else "Probing Depth (B)"},
-        {"type": "gm", "s_row": "Line1", "header": "Recession"},
-        {"type": "gm", "s_row": "Line2", "header": ""},
-        {"type": "km", "header": "Masticatory Mucosa"},
-        {"type": "furc", "header": "Furcation Involvement"},
-        {"type": "mob", "header": "Mobility"},
-        {"type": "prog", "header": "Prognosis"}
-    ]
+    # 2. 構建列結構
+    if not is_comparison:
+        # 單期 (Initial Only) 保持原本格式
+        active_row_metas = [
+            {"label": "Probing Depth (B)" if is_upper else "Probing Depth (L)", "r_key": "up_b_pd_i" if is_upper else "lo_l_pd_i", "type": "pd"},
+            {"label": "Probing Depth (P)" if is_upper else "Probing Depth (B)", "r_key": "up_p_pd_i" if is_upper else "lo_b_pd_i", "type": "pd"},
+            {"label": "Recession", "r_key": "up_b_gm_i" if is_upper else "lo_l_gm_i", "type": "gm"},
+            {"label": "", "r_key": "up_p_gm_i" if is_upper else "lo_b_gm_i", "type": "gm"},
+            {"label": "Masticatory Mucosa", "r_key": "up_km_i" if is_upper else "lo_km_i", "type": "km"},
+            {"label": "Furcation Involvement", "type": "furc"},
+            {"label": "Mobility", "r_key": "up_mob_i" if is_upper else "lo_mob_i", "type": "mob"},
+            {"label": "Prognosis", "type": "prog"}
+        ]
+    else:
+        # 🚀 雙期 (Initial vs Re-evaluation) 依照 CSV 結構分區排列：
+        # 上顎：上半 Buccal -> 下半 Palatal -> 下方 Furcation & Mobility (無 Prognosis)
+        # 下顎：上半 Lingual -> 下半 Buccal -> 下方 Furcation & Mobility (無 Prognosis)
+        if is_upper:
+            active_row_metas = [
+                # 上半部：Buccal
+                {"label": "Probing Depth (B) (I)", "r_key": "up_b_pd_i", "type": "pd"},
+                {"label": "Probing Depth (B) (R)", "r_key": "up_b_pd_r", "type": "pd"},
+                {"label": "Recession (B) (I)", "r_key": "up_b_gm_i", "type": "gm"},
+                {"label": "Recession (B) (R)", "r_key": "up_b_gm_r", "type": "gm"},
+                {"label": "Masticatory Mucosa (I)", "r_key": "up_km_i", "type": "km"},
+                {"label": "Masticatory Mucosa (R)", "r_key": "up_km_r", "type": "km"},
+                # 下半部：Palatal
+                {"label": "Probing Depth (P) (I)", "r_key": "up_p_pd_i", "type": "pd"},
+                {"label": "Probing Depth (P) (R)", "r_key": "up_p_pd_r", "type": "pd"},
+                {"label": "Recession (P) (I)", "r_key": "up_p_gm_i", "type": "gm"},
+                {"label": "Recession (P) (R)", "r_key": "up_p_gm_r", "type": "gm"},
+                # 底部：Furcation & Mobility
+                {"label": "Furcation Involvement", "type": "furc"},
+                {"label": "Mobility (I)", "r_key": "up_mob_i", "type": "mob"},
+                {"label": "Mobility (R)", "r_key": "up_mob_r", "type": "mob"},
+            ]
+        else:
+            active_row_metas = [
+                # 上半部：Lingual
+                {"label": "Probing Depth (L) (I)", "r_key": "lo_l_pd_i", "type": "pd"},
+                {"label": "Probing Depth (L) (R)", "r_key": "lo_l_pd_r", "type": "pd"},
+                {"label": "Recession (L) (I)", "r_key": "lo_l_gm_i", "type": "gm"},
+                {"label": "Recession (L) (R)", "r_key": "lo_l_gm_r", "type": "gm"},
+                # 下半部：Buccal
+                {"label": "Probing Depth (B) (I)", "r_key": "lo_b_pd_i", "type": "pd"},
+                {"label": "Probing Depth (B) (R)", "r_key": "lo_b_pd_r", "type": "pd"},
+                {"label": "Recession (B) (I)", "r_key": "lo_b_gm_i", "type": "gm"},
+                {"label": "Recession (B) (R)", "r_key": "lo_b_gm_r", "type": "gm"},
+                {"label": "Masticatory Mucosa (I)", "r_key": "lo_km_i", "type": "km"},
+                {"label": "Masticatory Mucosa (R)", "r_key": "lo_km_r", "type": "km"},
+                # 底部：Furcation & Mobility
+                {"label": "Furcation Involvement", "type": "furc"},
+                {"label": "Mobility (I)", "r_key": "lo_mob_i", "type": "mob"},
+                {"label": "Mobility (R)", "r_key": "lo_mob_r", "type": "mob"},
+            ]
 
-    total_rows = 1 + (len(row_meta_single) * 2 if is_comparison else len(row_meta_single))
+    total_rows = 1 + len(active_row_metas)
     total_cols = 1 + len(teeth)
 
     if not is_comparison:
         col_width_left, col_width_data = Inches(2.2), Inches(1.8)
         row_height, top_pos = Inches(config.TABLE_ROW_HEIGHT), Inches(1.3)
     else:
-        col_width_left, col_width_data = Inches(1.6), Inches(0.9)
+        col_width_left, col_width_data = Inches(2.0), Inches(0.9)
         row_height, top_pos = Inches(0.35), Inches(1.2)
 
     total_table_width = col_width_left + col_width_data * len(teeth)
@@ -177,45 +211,30 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     text_white, text_alert = _rgb(config.COLOR_TEXT_WHITE), _rgb(config.COLOR_TEXT_ALERT)
 
-    # 3. Header (Tooth)
+    # 3. Header
     c_t0 = table.cell(0, 0); c_t0.vertical_anchor = MSO_ANCHOR.MIDDLE
     _apply_cell_density(c_t0); c_t0.fill.background()
     p_t0 = c_t0.text_frame.paragraphs[0]; p_t0.alignment = PP_ALIGN.CENTER
     r_t0 = p_t0.add_run(); r_t0.text = "Tooth"
-    r_t0.font.name, r_t0.font.size, r_t0.font.bold, r_t0.font.color.rgb = config.FONT_PRIMARY, Pt(13 if is_comparison else 14), True, text_white
+    r_t0.font.name, r_t0.font.size, r_t0.font.bold, r_t0.font.color.rgb = config.FONT_PRIMARY, Pt(12 if is_comparison else 14), True, text_white
 
     for c_i, t in enumerate(teeth):
         c_t = table.cell(0, c_i + 1); c_t.vertical_anchor = MSO_ANCHOR.MIDDLE
         _apply_cell_density(c_t); c_t.fill.background()
         p_t = c_t.text_frame.paragraphs[0]; p_t.alignment = PP_ALIGN.CENTER
         r_t = p_t.add_run(); r_t.text = str(t)
-        r_t.font.name, r_t.font.size, r_t.font.bold, r_t.font.color.rgb = config.FONT_PRIMARY, Pt(13 if is_comparison else 14), True, text_white
-
-    active_row_metas = []
-    if not is_comparison:
-        for m in row_meta_single:
-            active_row_metas.append({**m, "stage": "I"})
-    else:
-        for m in row_meta_single:
-            active_row_metas.append({**m, "stage": "I"})
-            active_row_metas.append({**m, "stage": "R"})
+        r_t.font.name, r_t.font.size, r_t.font.bold, r_t.font.color.rgb = config.FONT_PRIMARY, Pt(12 if is_comparison else 14), True, text_white
 
     f_rows = find_furcation_rows(df)
-
-    # 🚀 動態缺失牙補充集合（當讀取出來都是 ??? 時，自動標記為缺失牙）
     dynamic_missing = set(missing_teeth)
 
-    # 4. 數據填寫
+    # 4. 數據填充
     for r_i, meta in enumerate(active_row_metas):
         r_ppt = r_i + 1
         c_lbl = table.cell(r_ppt, 0); c_lbl.vertical_anchor = MSO_ANCHOR.MIDDLE
         _apply_cell_density(c_lbl); c_lbl.fill.background()
         
-        lbl_text = meta["header"]
-        if is_comparison:
-            tag = " (I)" if meta["stage"] == "I" else " (R)"
-            lbl_text = f"{lbl_text}{tag}" if lbl_text else ""
-            
+        lbl_text = meta["label"]
         if lbl_text:
             p_lbl = c_lbl.text_frame.paragraphs[0]; p_lbl.alignment = PP_ALIGN.CENTER
             r_lbl = p_lbl.add_run(); r_lbl.text = lbl_text
@@ -226,18 +245,15 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             _apply_cell_density(cell_d); cell_d.fill.background()
 
             q = t // 10
-            col = upper_cols.get(t) if q in [1, 2] else lower_cols.get(t)
-            anatomy = anatomy_map_I if meta["stage"] == "I" else anatomy_map_R
+            col = upper_cols.get(t) if is_upper else lower_cols.get(t)
             p_d = cell_d.text_frame.paragraphs[0]; p_d.alignment = PP_ALIGN.CENTER
 
             if col is not None:
                 m_type = meta["type"]
+                r_idx = row_map.get(meta.get("r_key"))
 
                 if m_type == "pd":
-                    row_num = (anatomy.get("up_b_pd") if meta["s_row"] == "Line1" else anatomy.get("up_p_pd")) if q in [1,2] else (anatomy.get("lo_l_pd") if meta["s_row"] == "Line1" else anatomy.get("lo_b_pd"))
-                    digits = get_three_digit_raw_list(df, row_num, col)
-                    
-                    # 🚀 如果讀出來是 ['?', '?', '?']，自動補入動態缺牙集合
+                    digits = get_three_digit_raw_list(df, r_idx, col)
                     if all(d.strip() in ['?', ''] for d in digits):
                         dynamic_missing.add(t)
 
@@ -246,15 +262,12 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                         run = p_d.add_run(); run.text = f" {display_val} " if len(display_val)>=2 else display_val
                         run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
                         if display_val.isdigit() and int(display_val) >= 5:
-                            run.font.bold = True
-                            run.font.color.rgb = text_alert
+                            run.font.bold = True; run.font.color.rgb = text_alert
                         else:
-                            run.font.bold = False
-                            run.font.color.rgb = text_white
+                            run.font.bold = False; run.font.color.rgb = text_white
 
                 elif m_type == "gm":
-                    row_num = (anatomy.get("up_b_gm") if meta["s_row"] == "Line1" else anatomy.get("up_p_gm")) if q in [1,2] else (anatomy.get("lo_l_gm") if meta["s_row"] == "Line1" else anatomy.get("lo_b_gm"))
-                    digits = get_three_digit_raw_list(df, row_num, col)
+                    digits = get_three_digit_raw_list(df, r_idx, col)
                     for d in digits:
                         display_val = clean_cell(d)
                         run = p_d.add_run(); run.text = f" {display_val} " if len(display_val)>=2 else display_val
@@ -262,8 +275,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                         run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "km":
-                    row_num = anatomy.get("up_km") if q in [1, 2] else anatomy.get("lo_km")
-                    val = clean_cell(df.iloc[row_num, col]) if row_num is not None else "0"
+                    val = clean_cell(df.iloc[r_idx, col]) if r_idx is not None else "0"
                     run = p_d.add_run(); run.text = val if val!="" else "0"
                     run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, text_white
@@ -271,9 +283,9 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                 elif m_type == "furc":
                     text = "-"
                     if len(f_rows) >= 2:
-                        f_info = f_rows[0] if q in [1, 2] else f_rows[-1]
+                        f_info = f_rows[0] if is_upper else f_rows[-1]
                         raw_f = {clean_cell(df.iloc[f_info["label_row"], col+o]).upper(): clean_cell(df.iloc[f_info["value_row"], col+o]) for o in range(3)}
-                        pref = ["M", "B", "D", "L"] if q in [1, 2] else ["B", "L", "M", "D"]
+                        pref = ["M", "B", "D", "L"] if is_upper else ["B", "L", "M", "D"]
                         extracted = "".join([f"{l}{raw_f[l]}" for l in pref if l in raw_f and raw_f[l] in ["1", "2", "3"]])
                         if extracted: text = extracted
                     run = p_d.add_run(); run.text = text
@@ -281,8 +293,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "mob":
-                    row_num = anatomy.get("up_mob") if q in [1, 2] else anatomy.get("lo_mob")
-                    v = clean_cell(df.iloc[row_num, col]) if row_num is not None else ""
+                    v = clean_cell(df.iloc[r_idx, col]) if r_idx is not None else ""
                     val = {"1": "I", "2": "II", "3": "III"}.get(v, "WNL")
                     run = p_d.add_run(); run.text = val
                     run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
@@ -293,7 +304,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
-    # 5. 🚀 處理缺牙：整欄大合併 + 繪製跨欄對角斜線 (Diagonal Down)
+    # 5. 缺牙合併 + 對角斜線
     for c_i, t in enumerate(teeth):
         if t in dynamic_missing:
             start_cell = table.cell(1, c_i + 1)
@@ -305,11 +316,9 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             merged.text_frame.clear()
             _apply_cell_density(merged)
             merged.fill.background()
-            
-            # 🚀 畫上對角斜線
             _add_diagonal_strikethrough(merged)
 
-    # 6. 刷新 100% 純白實線外邊框
+    # 6. 100% 純白邊框刷新
     for r in range(total_rows):
         for c in range(total_cols):
             _set_cell_border_to_white(table.cell(r, c))
