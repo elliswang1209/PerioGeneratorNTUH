@@ -43,26 +43,28 @@ GRADE_MAP = {
 # 橘黃色設定
 COLOR_STAGE_R = RGBColor(255, 180, 0)
 
-def add_diagonal_line_to_merged_cell(slide, cell, color_rgb=(255, 255, 255), width_pt=1.5):
+def add_diagonal_line_to_table_range(slide, table_shape, start_row: int, end_row: int, col_idx: int, color_rgb=(255, 255, 255), width_pt=1.5):
     """
-    在指定儲存格（包含跨列合併儲存格）上繪製從左上到右下的向量對角斜線
+    在表格指定的跨列區域（start_row ~ end_row, col_idx）繪製穿透整欄的對角斜線
     """
-    # 取得儲存格在 Slide 上的絕對座標與尺寸
-    x1 = cell.left
-    y1 = cell.top
-    x2 = cell.left + cell.width
-    y2 = cell.top + cell.height
-
-    # 新增一條直線連接 (x1, y1) -> (x2, y2)
-    line = slide.shapes.add_connector(
-        MSO_CONNECTOR.STRAIGHT, x1, y1, x2, y2
-    )
+    table = table_shape.table
     
-    # 設定斜線樣式 (顏色與線條粗細)
+    # 計算該欄位的左上點 (x1, y1)
+    x1 = table_shape.left + sum(table.columns[c].width for c in range(col_idx))
+    y1 = table_shape.top + sum(table.rows[r].height for r in range(start_row))
+    
+    # 計算右下點 (x2, y2)
+    w = table.columns[col_idx].width
+    h = sum(table.rows[r].height for r in range(start_row, end_row + 1))
+    
+    x2 = x1 + w
+    y2 = y1 + h
+    
+    # 建立向量直線 Shape
+    line = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x1, y1, x2, y2)
     line.line.color.rgb = RGBColor(*color_rgb)
     line.line.width = Pt(width_pt)
     return line
-
 
 def parse_tooth_furcation(df, tooth: int, col: int, f_info: dict) -> str:
     if tooth not in VALID_FURCATION_TEETH or f_info is None:
@@ -444,24 +446,30 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
     # 5. 缺牙大合併與斜線
-    # 缺牙大合併與向量劃斜線範例
+
     for c_i, t in enumerate(teeth):
         if t in dynamic_missing:
             cell_col_idx = data_start_col + c_i
-            start_cell = table.cell(1, cell_col_idx)
-            end_cell = table.cell(total_rows - 1, cell_col_idx)
-            
-            # 1. 執行跨列合併
+            start_row = 1
+            end_row = total_rows - 1
+
+            start_cell = table.cell(start_row, cell_col_idx)
+            end_cell = table.cell(end_row, cell_col_idx)
             start_cell.merge(end_cell)
             
-            merged_cell = table.cell(1, cell_col_idx)
-            merged_cell.text_frame.clear()
-            merged_cell.fill.background() # 保持透明背景
-            
-            # 2. 精確畫出貫穿整個合併欄位的對角斜線 (白色 1.5pt)
-            add_diagonal_line_to_merged_cell(
+            merged = table.cell(start_row, cell_col_idx)
+            merged.vertical_anchor = MSO_ANCHOR.MIDDLE
+            merged.text_frame.clear()
+            _apply_cell_density(merged)
+            merged.fill.background()
+
+            # 🚀 精確劃出穿透整欄合併儲存格的對角斜線
+            add_diagonal_line_to_table_range(
                 slide, 
-                merged_cell, 
+                table_shape, 
+                start_row, 
+                end_row, 
+                cell_col_idx, 
                 color_rgb=(255, 255, 255), 
                 width_pt=1.5
             )
