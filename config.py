@@ -12,8 +12,8 @@ PPT_SLIDE_HEIGHT = 7.5    # 16:9 寬螢幕標準高度 (英吋)
 # 簡報字體設定
 FONT_PRIMARY = 'Times New Roman'
 FONT_SIZE_TITLE = 36
-FONT_SIZE_LABEL = 13
-FONT_SIZE_DATA = 12
+FONT_SIZE_LABEL = 16
+FONT_SIZE_DATA = 16
 
 # 簡報色彩計畫 (RGB 格式)
 COLOR_BG_DARK = (0, 0, 0)            # 暗黑主題背景
