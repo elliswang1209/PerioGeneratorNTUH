@@ -26,7 +26,7 @@ if uploaded_file is not None:
     
     # 呈現病患資訊 (若有解析出資訊)
     if patient_info.get('name') or patient_info.get('case_no'):
-        st.caption(f"👤 病患名稱：{patient_info.get('name', '未填寫')} | 🪪 病歷號：{patient_info.get('case_no', '未填寫')}")
+        st.caption(f"{patient_info.get('name', '未填寫')} | {patient_info.get('case_no', '未填寫')}")
 
     # 🚀 根據數據類型僅顯示「單一」對應下載載點
     if is_comparison:
