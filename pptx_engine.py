@@ -1,7 +1,6 @@
 # pptx_engine.py
 """
-簡報生成引擎：負責將結構化的牙周資料真實填入 PPTX 表格中。
-100% 自動抓取 CSV/Excel 數字、純黑背景、100% 純白邊框、靠右對齊佈局。
+簡報生成引擎：支援缺牙整欄合併 + 對角斜線，以及數值去除浮點數格式化。
 """
 from io import BytesIO
 from typing import Dict, Set, Any, List
@@ -46,6 +45,20 @@ def _set_cell_border_to_white(cell):
         if existing is not None:
             tcPr.remove(existing)
         tcPr.append(parse_xml(f'<a:{side} {nsdecls("a")}>{border_xml}</a:{side}>'))
+
+def _add_diagonal_strikethrough(cell):
+    """🚀 為缺牙合併儲存格塗上物理 100% 純白斜對角線 (lnDiagonalDown)"""
+    tcPr = cell._tc.get_or_add_tcPr()
+    diagonal_xml = (
+        f'<a:lnDiagonalDown {nsdecls("a")} w="12700" cmpd="s" algn="ctr">'
+        f'  <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
+        f'  <a:prstDash val="solid"/>'
+        f'</a:lnDiagonalDown>'
+    )
+    existing = tcPr.find(f'{{http://schemas.openxmlformats.org/drawingml/2006/main}}lnDiagonalDown')
+    if existing is not None:
+        tcPr.remove(existing)
+    tcPr.append(parse_xml(diagonal_xml))
 
 def _remove_default_table_style(table):
     try:
@@ -129,7 +142,6 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     anatomy_map_I = collect_absolute_row_indices(df, target_stage="I")
     anatomy_map_R = collect_absolute_row_indices(df, target_stage="R") if is_comparison else {}
 
-    # 定義項目種類
     row_meta_single = [
         {"type": "pd", "s_row": "Line1", "header": "Probing Depth (B)" if teeth[0] < 30 else "Probing Depth (L)"},
         {"type": "pd", "s_row": "Line2", "header": "Probing Depth (P)" if teeth[0] < 30 else "Probing Depth (B)"},
@@ -144,7 +156,6 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     total_rows = 1 + (len(row_meta_single) * 2 if is_comparison else len(row_meta_single))
     total_cols = 1 + len(teeth)
 
-    # 3. 尺寸佈局 (單期 vs 雙期對比)
     if not is_comparison:
         col_width_left, col_width_data = Inches(2.2), Inches(1.8)
         row_height, top_pos = Inches(config.TABLE_ROW_HEIGHT), Inches(1.3)
@@ -166,7 +177,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     text_white, text_alert = _rgb(config.COLOR_TEXT_WHITE), _rgb(config.COLOR_TEXT_ALERT)
 
-    # 4. Header (Tooth)
+    # 3. Header (Tooth)
     c_t0 = table.cell(0, 0); c_t0.vertical_anchor = MSO_ANCHOR.MIDDLE
     _apply_cell_density(c_t0); c_t0.fill.background()
     p_t0 = c_t0.text_frame.paragraphs[0]; p_t0.alignment = PP_ALIGN.CENTER
@@ -180,7 +191,6 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
         r_t = p_t.add_run(); r_t.text = str(t)
         r_t.font.name, r_t.font.size, r_t.font.bold, r_t.font.color.rgb = config.FONT_PRIMARY, Pt(13 if is_comparison else 14), True, text_white
 
-    # 5. 擴充對比列 meta
     active_row_metas = []
     if not is_comparison:
         for m in row_meta_single:
@@ -190,9 +200,12 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             active_row_metas.append({**m, "stage": "I"})
             active_row_metas.append({**m, "stage": "R"})
 
-    # 6. 填入實體數據
     f_rows = find_furcation_rows(df)
 
+    # 🚀 動態缺失牙補充集合（當讀取出來都是 ??? 時，自動標記為缺失牙）
+    dynamic_missing = set(missing_teeth)
+
+    # 4. 數據填寫
     for r_i, meta in enumerate(active_row_metas):
         r_ppt = r_i + 1
         c_lbl = table.cell(r_ppt, 0); c_lbl.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -208,26 +221,31 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             r_lbl = p_lbl.add_run(); r_lbl.text = lbl_text
             r_lbl.font.name, r_lbl.font.size, r_lbl.font.bold, r_lbl.font.color.rgb = config.FONT_PRIMARY, Pt(10 if is_comparison else 12), True, text_white
 
-        # 填入每顆牙齒的實體數值
         for c_i, t in enumerate(teeth):
             cell_d = table.cell(r_ppt, c_i + 1); cell_d.vertical_anchor = MSO_ANCHOR.MIDDLE
             _apply_cell_density(cell_d); cell_d.fill.background()
 
-            if t not in missing_teeth:
-                q = t // 10
-                col = upper_cols[t] if q in [1, 2] else lower_cols[t]
-                anatomy = anatomy_map_I if meta["stage"] == "I" else anatomy_map_R
-                p_d = cell_d.text_frame.paragraphs[0]; p_d.alignment = PP_ALIGN.CENTER
+            q = t // 10
+            col = upper_cols.get(t) if q in [1, 2] else lower_cols.get(t)
+            anatomy = anatomy_map_I if meta["stage"] == "I" else anatomy_map_R
+            p_d = cell_d.text_frame.paragraphs[0]; p_d.alignment = PP_ALIGN.CENTER
 
+            if col is not None:
                 m_type = meta["type"]
 
                 if m_type == "pd":
-                    row_num = (anatomy["up_b_pd"] if meta["s_row"] == "Line1" else anatomy["up_p_pd"]) if q in [1,2] else (anatomy["lo_l_pd"] if meta["s_row"] == "Line1" else anatomy["lo_b_pd"])
+                    row_num = (anatomy.get("up_b_pd") if meta["s_row"] == "Line1" else anatomy.get("up_p_pd")) if q in [1,2] else (anatomy.get("lo_l_pd") if meta["s_row"] == "Line1" else anatomy.get("lo_b_pd"))
                     digits = get_three_digit_raw_list(df, row_num, col)
+                    
+                    # 🚀 如果讀出來是 ['?', '?', '?']，自動補入動態缺牙集合
+                    if all(d.strip() in ['?', ''] for d in digits):
+                        dynamic_missing.add(t)
+
                     for d in digits:
-                        run = p_d.add_run(); run.text = f" {d} " if len(d.strip())>=2 else d
+                        display_val = clean_cell(d)
+                        run = p_d.add_run(); run.text = f" {display_val} " if len(display_val)>=2 else display_val
                         run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
-                        if d.strip().isdigit() and int(d.strip()) >= 5:
+                        if display_val.isdigit() and int(display_val) >= 5:
                             run.font.bold = True
                             run.font.color.rgb = text_alert
                         else:
@@ -235,15 +253,16 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                             run.font.color.rgb = text_white
 
                 elif m_type == "gm":
-                    row_num = (anatomy["up_b_gm"] if meta["s_row"] == "Line1" else anatomy["up_p_gm"]) if q in [1,2] else (anatomy["lo_l_gm"] if meta["s_row"] == "Line1" else anatomy["lo_b_gm"])
+                    row_num = (anatomy.get("up_b_gm") if meta["s_row"] == "Line1" else anatomy.get("up_p_gm")) if q in [1,2] else (anatomy.get("lo_l_gm") if meta["s_row"] == "Line1" else anatomy.get("lo_b_gm"))
                     digits = get_three_digit_raw_list(df, row_num, col)
                     for d in digits:
-                        run = p_d.add_run(); run.text = f" {d} " if len(d.strip())>=2 else d
+                        display_val = clean_cell(d)
+                        run = p_d.add_run(); run.text = f" {display_val} " if len(display_val)>=2 else display_val
                         run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
                         run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "km":
-                    row_num = anatomy["up_km"] if q in [1, 2] else anatomy["lo_km"]
+                    row_num = anatomy.get("up_km") if q in [1, 2] else anatomy.get("lo_km")
                     val = clean_cell(df.iloc[row_num, col]) if row_num is not None else "0"
                     run = p_d.add_run(); run.text = val if val!="" else "0"
                     run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
@@ -262,7 +281,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "mob":
-                    row_num = anatomy["up_mob"] if q in [1, 2] else anatomy["lo_mob"]
+                    row_num = anatomy.get("up_mob") if q in [1, 2] else anatomy.get("lo_mob")
                     v = clean_cell(df.iloc[row_num, col]) if row_num is not None else ""
                     val = {"1": "I", "2": "II", "3": "III"}.get(v, "WNL")
                     run = p_d.add_run(); run.text = val
@@ -274,19 +293,23 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
-    # 7. 處理缺失牙大融合
+    # 5. 🚀 處理缺牙：整欄大合併 + 繪製跨欄對角斜線 (Diagonal Down)
     for c_i, t in enumerate(teeth):
-        if t in missing_teeth:
+        if t in dynamic_missing:
             start_cell = table.cell(1, c_i + 1)
             end_cell = table.cell(total_rows - 1, c_i + 1)
             start_cell.merge(end_cell)
+            
             merged = table.cell(1, c_i + 1)
             merged.vertical_anchor = MSO_ANCHOR.MIDDLE
             merged.text_frame.clear()
             _apply_cell_density(merged)
             merged.fill.background()
+            
+            # 🚀 畫上對角斜線
+            _add_diagonal_strikethrough(merged)
 
-    # 8. 刷新 100% 純白實線邊框
+    # 6. 刷新 100% 純白實線外邊框
     for r in range(total_rows):
         for c in range(total_cols):
             _set_cell_border_to_white(table.cell(r, c))
