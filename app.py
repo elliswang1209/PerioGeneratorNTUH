@@ -41,10 +41,10 @@ if uploaded_file is not None:
             use_container_width=True
         )
     else:
-        st.info("💡 檢測到 Initial 單期數據。已為您生成 6 頁六象限簡報。")
+        st.info("成功生成！")
         ppt_initial = create_six_sextants_presentation(df, missing_teeth)
         st.download_button(
-            label="🛸 下載【Initial 六象限簡報】(6 頁 PPTX)",
+            label="🛸 下載【Initial 簡報】",
             data=ppt_initial,
             file_name="Periodontal_Sextants_Initial.pptx",
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
