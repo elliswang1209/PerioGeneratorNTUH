@@ -154,7 +154,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     p = tx_box.text_frame.paragraphs[0]
     p.text = title_text
     p.font.name = config.FONT_PRIMARY
-    p.font.size = Pt(24) # 🚀 主標題加大至 24 Pt
+    p.font.size = Pt(36) # 🚀 主標題加大至 24 Pt
     p.font.bold = True
     p.font.italic = True
     p.font.underline = True
