@@ -1,53 +1,80 @@
 # app.py
 """
-Streamlit 主程式：根據上傳數據類型，單一動態切換下載載點。
-- 雙期檔：僅提供【Initial vs Re-eval 對比簡報】(6+6 頁 PPTX)
-- 單期檔：僅提供【Initial 六象限簡報】(6 頁 PPTX)
+Streamlit 主應用程式入口與模組路由 (Page Router)
 """
 import streamlit as st
-from core_parser import parse_periodontal_csv
+import pandas as pd
+
+import config
+from core_parser import parse_periodontal_csv, find_missing_teeth
 from pptx_engine import create_six_sextants_presentation, create_comparison_presentation
 
-# 頁面配置
-st.set_page_config(page_title="AI 牙周六象限簡報直出系統", layout="wide")
+# 🚀 匯入獨立的 12 口內照處理模組
+from intraoral_photos import render_intraoral_photo_page
 
-st.title("🦷 PerioGeneratorPro")
-st.subheader("可以生成 Initial 或是 Initial & Re-evalaution 的對比")
+st.set_page_config(
+    page_title="Periodontal & Intraoral Photo Generator",
+    page_icon="🦷",
+    layout="wide"
+)
 
-# 檔案上傳器
-uploaded_file = st.file_uploader("請上傳牙周檢查表 CSV / Excel 檔案", type=["csv", "xlsx"])
+def render_periodontal_generator_page():
+    st.header("🦷 牙周病檢查表簡報生成器 (Periodontal Chart Generator)")
+    st.caption("請上傳 Initial 及/或 Re-evaluation 的檢查 CSV 檔案，系統將自動解析並繪製高質感對比簡報。")
 
-if uploaded_file is not None:
-    with st.spinner("處理中，請稍候..."):
-        # 呼叫解析引擎
-        df, missing_teeth, is_comparison, patient_info = parse_periodontal_csv(uploaded_file)
-
-    st.markdown("### 📊 簡報")
+    st.markdown("---")
     
-    # 呈現病患資訊 (若有解析出資訊)
-    if patient_info.get('name') or patient_info.get('case_no'):
-        st.caption(f"{patient_info.get('name', '未填寫')} | {patient_info.get('case_no', '未填寫')}")
+    uploaded_file = st.file_uploader("請選擇 Periogrid 輸出的 CSV 檔案", type=["csv"])
 
-    # 🚀 根據數據類型僅顯示「單一」對應下載載點
-    if is_comparison:
-        st.success("成功生成！")
-        ppt_comparison = create_comparison_presentation(df, missing_teeth)
-        st.download_button(
-            label="下載 Initial vs Re-eval 對比簡報",
-            data=ppt_comparison,
-            file_name="Periodontal_Sextants_Initial_vs_ReEval.pptx",
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            key="btn_comparison",
-            use_container_width=True
-        )
-    else:
-        st.info("成功生成！")
-        ppt_initial = create_six_sextants_presentation(df, missing_teeth)
-        st.download_button(
-            label="下載 Initial 簡報",
-            data=ppt_initial,
-            file_name="Periodontal_Sextants_Initial.pptx",
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            key="btn_initial",
-            use_container_width=True
-        )
+    if uploaded_file is not None:
+        try:
+            df = pd.read_csv(uploaded_file, header=None)
+            st.success("CSV 檔案讀取成功！")
+            
+            missing_teeth = find_missing_teeth(df)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**自動偵測缺牙牙號**：", sorted(list(missing_teeth)))
+
+            is_comparison = len(df) > 50 # 粗略判定是否包含 Re-evaluation
+
+            st.markdown("### 生成簡報下載")
+            if is_comparison:
+                st.info("偵測到此 CSV 包含 Initial & Re-evaluation 對比資料。")
+                ppt_comparison = create_comparison_presentation(df, missing_teeth)
+                st.download_button(
+                    label="📥 下載 Comparison 對比簡報 (.pptx)",
+                    data=ppt_comparison,
+                    file_name="Periodontal_Comparison_Report.pptx",
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                )
+            else:
+                st.info("偵測到此 CSV 為單一階段 Initial 資料。")
+                ppt_initial = create_six_sextants_presentation(df, missing_teeth)
+                st.download_button(
+                    label="📥 下載 Initial 簡報 (.pptx)",
+                    data=ppt_initial,
+                    file_name="Periodontal_Initial_Report.pptx",
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                )
+
+        except Exception as e:
+            st.error(f"解析檔案時發生錯誤：{str(e)}")
+
+def main():
+    # 側邊欄導航選單
+    st.sidebar.title("🦷 功能導航")
+    page_choice = st.sidebar.radio(
+        "請選擇功能模組：",
+        ["牙周簡報生成 (PPT)", "12 口內照上傳展示 (Photos)"]
+    )
+
+    if page_choice == "牙周簡報生成 (PPT)":
+        render_periodontal_generator_page()
+    elif page_choice == "12 口內照上傳展示 (Photos)":
+        # 🚀 導引呼叫獨立檔案 intraoral_photos.py 的主函式
+        render_intraoral_photo_page()
+
+if __name__ == "__main__":
+    main()
