@@ -30,7 +30,7 @@ if uploaded_file is not None:
 
     # 🚀 根據數據類型僅顯示「單一」對應下載載點
     if is_comparison:
-        st.success("檢測到 Initial & Re-evaluation 對比數據！")
+        st.success("成功生成！")
         ppt_comparison = create_comparison_presentation(df, missing_teeth)
         st.download_button(
             label="下載 Initial vs Re-eval 對比簡報",
