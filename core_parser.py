@@ -1,7 +1,7 @@
 # core_parser.py
 """
 核心解析引擎：100% 完整保留台大牙周專科病歷格式生成演算法，確保數據鏡射與過濾精準。
-支援 Initial 與 Initial & Re-evaluation 雙期分側定位。
+支援 Initial 與 Initial & Re-evaluation 雙期分側定位，修正 CAL 被 MOBILITY SCALE 誤抓的問題。
 """
 import pandas as pd
 import io
@@ -22,7 +22,6 @@ def is_valid_tooth(x):
     return (tooth // 10) in [1, 2, 3, 4] and 1 <= (tooth % 10) <= 8
 
 def is_comparison_file(df) -> bool:
-    """自動判斷上傳的檔案是否為 Initial & Re-evaluation 雙期對比檔"""
     full_text = df.astype(str).to_string()
     return ("Date(Re-evaluation)" in full_text) or ("Re=" in full_text) or ("I" in df.values and "R" in df.values)
 
@@ -73,7 +72,7 @@ def get_missing_teeth_set(df, tooth_rows, missing_rows):
     return missing_teeth
 
 def collect_comparison_row_indices(df):
-    """智慧型分區列號收集器：完整包覆 PD, GM, CAL, KM, Mobility"""
+    """智慧型分區列號收集器：修復 CAL 被 MOBILITY SCALE 誤讀之 Bug"""
     is_comp = is_comparison_file(df)
 
     midpoint = len(df) // 2
@@ -101,9 +100,10 @@ def collect_comparison_row_indices(df):
         elif ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "up_b_gm_i" in res and "up_p_gm_i" not in res:
             res["up_p_gm_i"] = r; res["up_p_gm_r"] = r + 1 if is_comp else r
 
-        if "CAL" in prefix and "up_b_cal_i" not in res:
+        # 🚀 排除 SCALE，精確匹配 CAL
+        if "CAL" in prefix and "SCALE" not in prefix and "up_b_cal_i" not in res:
             res["up_b_cal_i"] = r; res["up_b_cal_r"] = r + 1 if is_comp else r
-        elif "CAL" in prefix and "up_b_cal_i" in res and "up_p_cal_i" not in res:
+        elif "CAL" in prefix and "SCALE" not in prefix and "up_b_cal_i" in res and "up_p_cal_i" not in res:
             res["up_p_cal_i"] = r; res["up_p_cal_r"] = r + 1 if is_comp else r
 
         if "KM" in prefix and "up_km_i" not in res:
@@ -128,9 +128,10 @@ def collect_comparison_row_indices(df):
         elif ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "lo_l_gm_i" in res and "lo_b_gm_i" not in res:
             res["lo_b_gm_i"] = r; res["lo_b_gm_r"] = r + 1 if is_comp else r
 
-        if "CAL" in prefix and "lo_l_cal_i" not in res:
+        # 🚀 排除 SCALE，精確匹配 CAL
+        if "CAL" in prefix and "SCALE" not in prefix and "lo_l_cal_i" not in res:
             res["lo_l_cal_i"] = r; res["lo_l_cal_r"] = r + 1 if is_comp else r
-        elif "CAL" in prefix and "lo_l_cal_i" in res and "lo_b_cal_i" not in res:
+        elif "CAL" in prefix and "SCALE" not in prefix and "lo_l_cal_i" in res and "lo_b_cal_i" not in res:
             res["lo_b_cal_i"] = r; res["lo_b_cal_r"] = r + 1 if is_comp else r
 
         if "KM" in prefix and "lo_km_i" not in res:
