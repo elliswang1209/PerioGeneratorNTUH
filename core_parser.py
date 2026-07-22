@@ -1,7 +1,6 @@
 # core_parser.py
 """
-核心解析引擎：自動相容單期 (Initial.csv) 與雙期 (Initial & Re-evaluation.csv) 牙周病歷格式。
-100% 完整保留台大牙周專科病歷格式生成演算法，確保數據鏡射與過濾精準。
+核心解析引擎：100% 完整保留台大牙周專科病歷格式生成演算法，確保數據鏡射與過濾精準。
 """
 import pandas as pd
 import io
@@ -26,7 +25,6 @@ def find_tooth_rows(df):
     tooth_rows = []
     for i in range(len(df)):
         row_cells = [clean_cell(x) for x in df.iloc[i].tolist()]
-        # 尋找含有 Tooth 關鍵字或者包含超過 3 個有效牙位的列
         valid_teeth = [int(x) for x in row_cells if is_valid_tooth(x)]
         if "Tooth" in row_cells or len(valid_teeth) >= 5:
             tooth_rows.append(i)
@@ -96,10 +94,7 @@ def collect_absolute_row_indices(df, target_stage="I"):
         row_prefix = " ".join([clean_cell(df.iloc[i, c]).upper() for c in range(min(3, df.shape[1]))])
         stage_tag = clean_cell(df.iloc[i, 1]).upper() if df.shape[1] > 1 else ""
 
-        # 如果是雙期檔，根據 target_stage 篩選對應列
         if is_comp:
-            # 第一個標題行通常帶有項目名稱，標記欄為 I
-            # 第二行無項目名稱，標記欄為 R
             if "PD" in row_prefix and (stage_tag == target_stage or (target_stage == "I" and "PD" in row_prefix)):
                 pd_rows.append(i if target_stage == "I" else i + 1)
             elif "GM" in row_prefix and (stage_tag == target_stage or (target_stage == "I" and "GM" in row_prefix)):
@@ -109,7 +104,6 @@ def collect_absolute_row_indices(df, target_stage="I"):
             elif "KM" in row_prefix and (stage_tag == target_stage or (target_stage == "I" and "KM" in row_prefix)):
                 km_rows.append(i if target_stage == "I" else i + 1)
         else:
-            # 單期檔正常搜尋
             if "PD" in row_prefix: pd_rows.append(i)
             elif "GM" in row_prefix: gm_rows.append(i)
             elif "MOBILITY" in row_prefix: mob_rows.append(i)
@@ -167,65 +161,39 @@ def extract_implant_teeth(df_raw) -> set:
                     
     return implant_teeth
 
-def generate_present_dentition(df, tooth_rows, missing_teeth):
-    if len(tooth_rows) < 2: return " 1. Present dentition\n    (Error: No tooth rows)"
-    present = {t for t in get_tooth_start_columns(df, tooth_rows[0]).keys() if t not in missing_teeth} | {t for t in get_tooth_start_columns(df, tooth_rows[-1]).keys() if t not in missing_teeth}
-    q1 = "".join([str(t % 10) if t in present else " " for t in [18, 17, 16, 15, 14, 13, 12, 11]])
-    q2 = "".join([str(t % 10) if t in present else " " for t in [21, 22, 23, 24, 25, 26, 27, 28]])
-    q4 = "".join([str(t % 10) if t in present else " " for t in [48, 47, 46, 45, 44, 43, 42, 41]])
-    q3 = "".join([str(t % 10) if t in present else " " for t in [31, 32, 33, 34, 35, 36, 37, 38]])
-    return f"LF:\n 1. Present dentition\n    {q1} | {q2}\n    {'-' * (len(q1)+len(q2)+3)}\n    {q4} | {q3}"
+# ==============================================================================
+# 🚀 對外進入點接口：完美串接 app.py 與 pptx_engine.py
+# ==============================================================================
 
-def parse_periodontal_pd(df, missing_teeth, target_stage="I"):
-    tooth_rows = find_tooth_rows(df)
-    anatomy = collect_absolute_row_indices(df, target_stage=target_stage)
-    
-    records = {}
-    for tooth, col in get_tooth_start_columns(df, tooth_rows[0]).items():
-        if tooth not in missing_teeth and tooth // 10 in [1, 2]:
-            records[tooth] = {
-                "tooth": tooth, 
-                "col": col, 
-                "buccal_or_facial": get_three_digit_pd(df, anatomy["up_b_pd"], col), 
-                "palatal_or_lingual": get_three_digit_pd(df, anatomy["up_p_pd"], col)
-            }
-    for tooth, col in get_tooth_start_columns(df, tooth_rows[-1]).items():
-        if tooth not in missing_teeth and tooth // 10 in [3, 4]:
-            records[tooth] = {
-                "tooth": tooth, 
-                "col": col, 
-                "buccal_or_facial": get_three_digit_pd(df, anatomy["lo_b_pd"], col), 
-                "palatal_or_lingual": get_three_digit_pd(df, anatomy["lo_l_pd"], col)
-            }
-    return records
+def parse_periodontal_csv(file_stream) -> Tuple[Any, Set[int], bool, Dict[str, Any]]:
+    """
+    對外主進入點：讀取 CSV/Excel 並調用上方經典台大解析邏輯。
+    """
+    try:
+        file_stream.seek(0)
+        df = pd.read_csv(file_stream, header=None)
+    except Exception:
+        file_stream.seek(0)
+        df = pd.read_excel(file_stream, header=None)
 
-def parse_mobility(df, missing_teeth, target_stage="I"):
-    tooth_rows = find_tooth_rows(df)
-    anatomy = collect_absolute_row_indices(df, target_stage=target_stage)
-    mobility = {}
-    for t, c in get_tooth_start_columns(df, tooth_rows[0]).items():
-        if t not in missing_teeth and anatomy["up_mob"] is not None: 
-            mobility[t] = clean_cell(df.iloc[anatomy["up_mob"], c])
-    for t, c in get_tooth_start_columns(df, tooth_rows[-1]).items():
-        if t not in missing_teeth and anatomy["lo_mob"] is not None: 
-            mobility[t] = clean_cell(df.iloc[anatomy["lo_mob"], c])
-    return mobility
+    # 1. 判斷是否為雙期對比檔
+    is_comp = is_comparison_file(df)
 
-def parse_furcation(df, missing_teeth):
+    # 2. 擷取病患 metadata
+    patient_info = {}
+    for r in range(min(10, len(df))):
+        row = df.iloc[r].dropna().tolist()
+        for idx, val in enumerate(row):
+            val_str = str(val).strip()
+            if "Patient's Name" in val_str and idx + 2 < len(row):
+                patient_info["name"] = str(row[idx + 2]).strip()
+            elif "Case Report No." in val_str and idx + 2 < len(row):
+                patient_info["case_no"] = str(row[idx + 2]).strip()
+
+    # 3. 呼叫專科邏輯計算 Missing Teeth
     tooth_rows = find_tooth_rows(df)
-    f_rows = find_furcation_rows(df)
-    if len(f_rows) < 2: return {}
-    furcation = {}
-    upper_prefered_order = ["M", "B", "D"]
-    for tooth, col in get_tooth_start_columns(df, tooth_rows[0]).items():
-        if tooth in missing_teeth: continue
-        raw = {clean_cell(df.iloc[f_rows[0]["label_row"], col + o]).upper(): clean_cell(df.iloc[f_rows[0]["value_row"], col + o]) for o in range(3)}
-        text = "".join([f"{l}{raw[l]}" for l in upper_prefered_order + ["L"] if l in raw and raw[l] in ["1", "2", "3"]])
-        if text: furcation[tooth] = text
-    lower_prefered_order = ["B", "L"]
-    for tooth, col in get_tooth_start_columns(df, tooth_rows[-1]).items():
-        if tooth in missing_teeth: continue
-        raw = {clean_cell(df.iloc[f_rows[-1]["label_row"], col + o]).upper(): clean_cell(df.iloc[f_rows[-1]["value_row"], col + o]) for o in range(3)}
-        text = "".join([f"{l}{raw[l]}" for l in lower_prefered_order + ["M", "D"] if l in raw and raw[l] in ["1", "2", "3"]])
-        if text: furcation[tooth] = text
-    return furcation
+    missing_rows = find_missing_rows(df)
+    missing_teeth = get_missing_teeth_set(df, tooth_rows, missing_rows)
+
+    # 回傳原生 df，讓 pptx_engine 直接調用你的 get_three_digit_raw_list、collect_absolute_row_indices 等極致演算法
+    return df, missing_teeth, is_comp, patient_info
