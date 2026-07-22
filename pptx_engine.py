@@ -1,10 +1,12 @@
 # pptx_engine.py
 """
-簡報生成引擎：負責將結構化的牙周資料繪製成 PPTX 檔案
-特點：表格100%靠右對齊、純黑背景、100%純白邊框、單期與雙期對比尺寸動態最佳化。
+簡報生成引擎：負責將結構化的牙周資料真實填入 PPTX 表格中。
+100% 自動抓取 CSV/Excel 數字、純黑背景、100% 純白邊框、靠右對齊佈局。
 """
 from io import BytesIO
 from typing import Dict, Set, Any, List
+import pandas as pd
+
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
@@ -13,24 +15,30 @@ from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
 
 import config
+from core_parser import (
+    find_tooth_rows, 
+    get_tooth_start_columns, 
+    collect_absolute_row_indices, 
+    get_three_digit_raw_list,
+    clean_cell,
+    find_furcation_rows
+)
 
 def _rgb(color_tuple):
     return RGBColor(*color_tuple)
 
 def _apply_cell_density(cell):
-    """消除儲存格內部的 Margin 留白"""
     cell.margin_top = Inches(config.CELL_INTERNAL_MARGIN)
     cell.margin_bottom = Inches(config.CELL_INTERNAL_MARGIN)
     cell.margin_left = Inches(config.CELL_INTERNAL_MARGIN)
     cell.margin_right = Inches(config.CELL_INTERNAL_MARGIN)
 
 def _set_cell_border_to_white(cell):
-    """強行將儲存格四周刷上 100% 飽和度的純白實線邊框"""
     tcPr = cell._tc.get_or_add_tcPr()
     border_xml = (
         f'<a:ln {nsdecls("a")} w="12700" cmpd="s" algn="ctr">'
-        f'  <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'  # 100% 純白
-        f'  <a:prstDash val="solid"/>'                           # 實線
+        f'  <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
+        f'  <a:prstDash val="solid"/>'
         f'</a:ln>'
     )
     for side in ['lnL', 'lnR', 'lnT', 'lnB']:
@@ -40,7 +48,6 @@ def _set_cell_border_to_white(cell):
         tcPr.append(parse_xml(f'<a:{side} {nsdecls("a")}>{border_xml}</a:{side}>'))
 
 def _remove_default_table_style(table):
-    """移除 PowerPoint 預設表格樣式 (如藍底白字)，植入透明無樣式空 ID"""
     try:
         tblPr = table._tbl.tblPr
         tableStyleId = tblPr.find('{http://schemas.openxmlformats.org/drawingml/2006/main}tableStyleId')
@@ -50,23 +57,11 @@ def _remove_default_table_style(table):
     except Exception:
         pass
 
-def _set_cell_text(cell, text: str, font_size: int, font_color: RGBColor, bold: bool = False, italic: bool = False):
-    """統一樣式設定輔助函式"""
-    cell.text = str(text)
-    for p in cell.text_frame.paragraphs:
-        p.alignment = PP_ALIGN.CENTER
-        for run in p.runs:
-            run.font.name = config.FONT_PRIMARY
-            run.font.size = Pt(font_size)
-            run.font.bold = bold
-            run.font.italic = italic
-            run.font.color.rgb = font_color
-
 # ==============================================================================
 # 簡報直出對外接口
 # ==============================================================================
 
-def create_six_sextants_presentation(records: Dict[int, Dict[str, Any]], missing_teeth: Set[int]) -> BytesIO:
+def create_six_sextants_presentation(df, missing_teeth: Set[int]) -> BytesIO:
     """模式 A：生成 6 頁 Initial 六象限簡報"""
     prs = Presentation()
     prs.slide_width = Inches(config.PPT_SLIDE_WIDTH)
@@ -75,14 +70,14 @@ def create_six_sextants_presentation(records: Dict[int, Dict[str, Any]], missing
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name} - Initial Charting", teeth, records, missing_teeth, is_comparison=False)
+        _draw_sextant_slide(slide, f"{sextant_name} - Initial Charting", teeth, df, missing_teeth, is_comparison=False)
 
     stream = BytesIO()
     prs.save(stream)
     stream.seek(0)
     return stream
 
-def create_comparison_presentation(records: Dict[int, Dict[str, Any]], missing_teeth: Set[int]) -> BytesIO:
+def create_comparison_presentation(df, missing_teeth: Set[int]) -> BytesIO:
     """模式 B：生成 12 頁 (6 頁 Initial + 6 頁 Initial vs Re-eval 對比) 簡報"""
     prs = Presentation()
     prs.slide_width = Inches(config.PPT_SLIDE_WIDTH)
@@ -92,12 +87,12 @@ def create_comparison_presentation(records: Dict[int, Dict[str, Any]], missing_t
     # 前 6 頁：Initial Stage
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name} - Initial Stage", teeth, records, missing_teeth, is_comparison=False)
+        _draw_sextant_slide(slide, f"{sextant_name} - Initial Stage", teeth, df, missing_teeth, is_comparison=False)
 
     # 後 6 頁：Initial vs Re-evaluation
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name} - Initial vs Re-evaluation", teeth, records, missing_teeth, is_comparison=True)
+        _draw_sextant_slide(slide, f"{sextant_name} - Initial vs Re-evaluation", teeth, df, missing_teeth, is_comparison=True)
 
     stream = BytesIO()
     prs.save(stream)
@@ -105,15 +100,14 @@ def create_comparison_presentation(records: Dict[int, Dict[str, Any]], missing_t
     return stream
 
 # ==============================================================================
-# 核心繪圖邏輯 (靠右對齊 & 尺寸動態適應)
+# 核心繪圖與數據真實填入邏輯
 # ==============================================================================
 
-def _draw_sextant_slide(slide, title_text: str, teeth: List[int], records: Dict[int, Dict[str, Any]], missing_teeth: Set[int], is_comparison: bool):
-    # 1. 投影片背景設置純黑
+def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_teeth: Set[int], is_comparison: bool):
     slide.background.fill.solid()
     slide.background.fill.fore_color.rgb = _rgb(config.COLOR_BG_DARK)
 
-    # 2. 標題：麥黃色、斜體、靠左對齊
+    # 1. 標題
     tx_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.2), Inches(12), Inches(0.8))
     p = tx_box.text_frame.paragraphs[0]
     p.text = title_text
@@ -125,96 +119,174 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], records: Dict[
     p.font.color.rgb = _rgb(config.COLOR_TITLE_WHEAT)
     p.alignment = PP_ALIGN.LEFT
 
-    # 3. 定義列屬性
-    row_labels = [
-        "Probing Depth (B/P)" if teeth[0] < 30 else "Probing Depth (L/B)",
-        "Recession",
-        "Masticatory Mucosa",
-        "Furcation Involvement",
-        "Mobility",
-        "Prognosis"
+    # 2. 數據對照列地圖
+    tooth_rows = find_tooth_rows(df)
+    if len(tooth_rows) < 2:
+        return
+    upper_cols = get_tooth_start_columns(df, tooth_rows[0])
+    lower_cols = get_tooth_start_columns(df, tooth_rows[-1])
+
+    anatomy_map_I = collect_absolute_row_indices(df, target_stage="I")
+    anatomy_map_R = collect_absolute_row_indices(df, target_stage="R") if is_comparison else {}
+
+    # 定義項目種類
+    row_meta_single = [
+        {"type": "pd", "s_row": "Line1", "header": "Probing Depth (B)" if teeth[0] < 30 else "Probing Depth (L)"},
+        {"type": "pd", "s_row": "Line2", "header": "Probing Depth (P)" if teeth[0] < 30 else "Probing Depth (B)"},
+        {"type": "gm", "s_row": "Line1", "header": "Recession"},
+        {"type": "gm", "s_row": "Line2", "header": ""},
+        {"type": "km", "header": "Masticatory Mucosa"},
+        {"type": "furc", "header": "Furcation Involvement"},
+        {"type": "mob", "header": "Mobility"},
+        {"type": "prog", "header": "Prognosis"}
     ]
-    
-    rows_per_metric = 2 if is_comparison else 1
-    total_rows = 1 + len(row_labels) * rows_per_metric
+
+    total_rows = 1 + (len(row_meta_single) * 2 if is_comparison else len(row_meta_single))
     total_cols = 1 + len(teeth)
 
-    # 4. 根據模式 (Initial vs Initial+Re) 計算靠右對齊座標與尺寸
+    # 3. 尺寸佈局 (單期 vs 雙期對比)
     if not is_comparison:
-        # --- 單期模式 (維持原本寬度與高度) ---
-        col_width_left = Inches(2.2)
-        col_width_data = Inches(1.8)
-        row_height = Inches(config.TABLE_ROW_HEIGHT)
-        top_pos = Inches(1.3)
+        col_width_left, col_width_data = Inches(2.2), Inches(1.8)
+        row_height, top_pos = Inches(config.TABLE_ROW_HEIGHT), Inches(1.3)
     else:
-        # --- 雙期對比模式 (高度與投影片切齊、寬度比一半少一點) ---
-        col_width_left = Inches(1.6)
-        col_width_data = Inches(0.9)  # 5顆牙總寬約 1.6 + 0.9*5 = 6.1 英吋 (< 6.666)
-        row_height = Inches(0.45)     # 13 列 * 0.45 = 5.85 英吋高度
-        top_pos = Inches(1.2)         # 高度滿版切齊 (1.2 + 5.85 = 7.05 / 7.5 英吋)
+        col_width_left, col_width_data = Inches(1.6), Inches(0.9)
+        row_height, top_pos = Inches(0.35), Inches(1.2)
 
     total_table_width = col_width_left + col_width_data * len(teeth)
     total_table_height = row_height * total_rows
+    left_pos = Inches(config.PPT_SLIDE_WIDTH) - total_table_width - Inches(0.5)
 
-    # 🚀 精確計算靠右對齊的 Left 座標 (右邊固定留白 0.5 英吋)
-    right_margin = Inches(0.5)
-    left_pos = Inches(config.PPT_SLIDE_WIDTH) - total_table_width - right_margin
-
-    # 5. 新增表格並清除預設樣式
     table_shape = slide.shapes.add_table(total_rows, total_cols, left_pos, top_pos, total_table_width, total_table_height)
     table = table_shape.table
     _remove_default_table_style(table)
 
     table.columns[0].width = col_width_left
-    for c in range(1, total_cols):
-        table.columns[c].width = col_width_data
-    for r in range(total_rows):
-        table.rows[r].height = row_height
+    for c in range(1, total_cols): table.columns[c].width = col_width_data
+    for r in range(total_rows): table.rows[r].height = row_height
 
-    text_white = _rgb(config.COLOR_TEXT_WHITE)
+    text_white, text_alert = _rgb(config.COLOR_TEXT_WHITE), _rgb(config.COLOR_TEXT_ALERT)
 
-    # 6. 填入 Header (第一列牙位)
-    cell_tooth = table.cell(0, 0)
-    cell_tooth.vertical_anchor = MSO_ANCHOR.MIDDLE
-    _apply_cell_density(cell_tooth)
-    cell_tooth.fill.background()
-    _set_cell_text(cell_tooth, "Tooth", 13 if is_comparison else 14, text_white, bold=True)
+    # 4. Header (Tooth)
+    c_t0 = table.cell(0, 0); c_t0.vertical_anchor = MSO_ANCHOR.MIDDLE
+    _apply_cell_density(c_t0); c_t0.fill.background()
+    p_t0 = c_t0.text_frame.paragraphs[0]; p_t0.alignment = PP_ALIGN.CENTER
+    r_t0 = p_t0.add_run(); r_t0.text = "Tooth"
+    r_t0.font.name, r_t0.font.size, r_t0.font.bold, r_t0.font.color.rgb = config.FONT_PRIMARY, Pt(13 if is_comparison else 14), True, text_white
 
-    for c_i, tooth in enumerate(teeth):
-        cell_t = table.cell(0, c_i + 1)
-        cell_t.vertical_anchor = MSO_ANCHOR.MIDDLE
-        _apply_cell_density(cell_t)
-        cell_t.fill.background()
-        _set_cell_text(cell_t, str(tooth), 13 if is_comparison else 14, text_white, bold=True)
+    for c_i, t in enumerate(teeth):
+        c_t = table.cell(0, c_i + 1); c_t.vertical_anchor = MSO_ANCHOR.MIDDLE
+        _apply_cell_density(c_t); c_t.fill.background()
+        p_t = c_t.text_frame.paragraphs[0]; p_t.alignment = PP_ALIGN.CENTER
+        r_t = p_t.add_run(); r_t.text = str(t)
+        r_t.font.name, r_t.font.size, r_t.font.bold, r_t.font.color.rgb = config.FONT_PRIMARY, Pt(13 if is_comparison else 14), True, text_white
 
-    # 7. 填入左側標籤與背景設定
-    for r in range(total_rows):
-        for c in range(total_cols):
-            cell = table.cell(r, c)
-            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
-            _apply_cell_density(cell)
-            cell.fill.background()  # 透出簡報純黑背景
+    # 5. 擴充對比列 meta
+    active_row_metas = []
+    if not is_comparison:
+        for m in row_meta_single:
+            active_row_metas.append({**m, "stage": "I"})
+    else:
+        for m in row_meta_single:
+            active_row_metas.append({**m, "stage": "I"})
+            active_row_metas.append({**m, "stage": "R"})
+
+    # 6. 填入實體數據
+    f_rows = find_furcation_rows(df)
+
+    for r_i, meta in enumerate(active_row_metas):
+        r_ppt = r_i + 1
+        c_lbl = table.cell(r_ppt, 0); c_lbl.vertical_anchor = MSO_ANCHOR.MIDDLE
+        _apply_cell_density(c_lbl); c_lbl.fill.background()
+        
+        lbl_text = meta["header"]
+        if is_comparison:
+            tag = " (I)" if meta["stage"] == "I" else " (R)"
+            lbl_text = f"{lbl_text}{tag}" if lbl_text else ""
             
-            if r > 0 and c == 0:
-                metric_idx = (r - 1) // rows_per_metric
-                stage_tag = " (I)" if (is_comparison and (r - 1) % 2 == 0) else (" (R)" if is_comparison else "")
-                label_text = f"{row_labels[metric_idx]}{stage_tag}"
-                _set_cell_text(cell, label_text, 10 if is_comparison else 12, text_white, bold=True)
+        if lbl_text:
+            p_lbl = c_lbl.text_frame.paragraphs[0]; p_lbl.alignment = PP_ALIGN.CENTER
+            r_lbl = p_lbl.add_run(); r_lbl.text = lbl_text
+            r_lbl.font.name, r_lbl.font.size, r_lbl.font.bold, r_lbl.font.color.rgb = config.FONT_PRIMARY, Pt(10 if is_comparison else 12), True, text_white
 
-    # 8. 處理缺失牙 (Missing Teeth) 大合併
-    for c_i, tooth in enumerate(teeth):
-        if tooth in missing_teeth:
+        # 填入每顆牙齒的實體數值
+        for c_i, t in enumerate(teeth):
+            cell_d = table.cell(r_ppt, c_i + 1); cell_d.vertical_anchor = MSO_ANCHOR.MIDDLE
+            _apply_cell_density(cell_d); cell_d.fill.background()
+
+            if t not in missing_teeth:
+                q = t // 10
+                col = upper_cols[t] if q in [1, 2] else lower_cols[t]
+                anatomy = anatomy_map_I if meta["stage"] == "I" else anatomy_map_R
+                p_d = cell_d.text_frame.paragraphs[0]; p_d.alignment = PP_ALIGN.CENTER
+
+                m_type = meta["type"]
+
+                if m_type == "pd":
+                    row_num = (anatomy["up_b_pd"] if meta["s_row"] == "Line1" else anatomy["up_p_pd"]) if q in [1,2] else (anatomy["lo_l_pd"] if meta["s_row"] == "Line1" else anatomy["lo_b_pd"])
+                    digits = get_three_digit_raw_list(df, row_num, col)
+                    for d in digits:
+                        run = p_d.add_run(); run.text = f" {d} " if len(d.strip())>=2 else d
+                        run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                        if d.strip().isdigit() and int(d.strip()) >= 5:
+                            run.font.bold = True
+                            run.font.color.rgb = text_alert
+                        else:
+                            run.font.bold = False
+                            run.font.color.rgb = text_white
+
+                elif m_type == "gm":
+                    row_num = (anatomy["up_b_gm"] if meta["s_row"] == "Line1" else anatomy["up_p_gm"]) if q in [1,2] else (anatomy["lo_l_gm"] if meta["s_row"] == "Line1" else anatomy["lo_b_gm"])
+                    digits = get_three_digit_raw_list(df, row_num, col)
+                    for d in digits:
+                        run = p_d.add_run(); run.text = f" {d} " if len(d.strip())>=2 else d
+                        run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                        run.font.bold, run.font.color.rgb = False, text_white
+
+                elif m_type == "km":
+                    row_num = anatomy["up_km"] if q in [1, 2] else anatomy["lo_km"]
+                    val = clean_cell(df.iloc[row_num, col]) if row_num is not None else "0"
+                    run = p_d.add_run(); run.text = val if val!="" else "0"
+                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                    run.font.bold, run.font.color.rgb = False, text_white
+
+                elif m_type == "furc":
+                    text = "-"
+                    if len(f_rows) >= 2:
+                        f_info = f_rows[0] if q in [1, 2] else f_rows[-1]
+                        raw_f = {clean_cell(df.iloc[f_info["label_row"], col+o]).upper(): clean_cell(df.iloc[f_info["value_row"], col+o]) for o in range(3)}
+                        pref = ["M", "B", "D", "L"] if q in [1, 2] else ["B", "L", "M", "D"]
+                        extracted = "".join([f"{l}{raw_f[l]}" for l in pref if l in raw_f and raw_f[l] in ["1", "2", "3"]])
+                        if extracted: text = extracted
+                    run = p_d.add_run(); run.text = text
+                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                    run.font.bold, run.font.color.rgb = False, text_white
+
+                elif m_type == "mob":
+                    row_num = anatomy["up_mob"] if q in [1, 2] else anatomy["lo_mob"]
+                    v = clean_cell(df.iloc[row_num, col]) if row_num is not None else ""
+                    val = {"1": "I", "2": "II", "3": "III"}.get(v, "WNL")
+                    run = p_d.add_run(); run.text = val
+                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                    run.font.bold, run.font.color.rgb = False, text_white
+
+                elif m_type == "prog":
+                    run = p_d.add_run(); run.text = "G"
+                    run.font.name, run.font.size = config.FONT_PRIMARY, Pt(11 if is_comparison else 14)
+                    run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
+
+    # 7. 處理缺失牙大融合
+    for c_i, t in enumerate(teeth):
+        if t in missing_teeth:
             start_cell = table.cell(1, c_i + 1)
             end_cell = table.cell(total_rows - 1, c_i + 1)
             start_cell.merge(end_cell)
-            
-            merged_cell = table.cell(1, c_i + 1)
-            merged_cell.vertical_anchor = MSO_ANCHOR.MIDDLE
-            merged_cell.text_frame.clear()
-            _apply_cell_density(merged_cell)
-            merged_cell.fill.background()
+            merged = table.cell(1, c_i + 1)
+            merged.vertical_anchor = MSO_ANCHOR.MIDDLE
+            merged.text_frame.clear()
+            _apply_cell_density(merged)
+            merged.fill.background()
 
-    # 9. 最終重新覆蓋一圈 100% 純白實線邊框
+    # 8. 刷新 100% 純白實線邊框
     for r in range(total_rows):
         for c in range(total_cols):
             _set_cell_border_to_white(table.cell(r, c))
