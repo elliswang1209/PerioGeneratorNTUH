@@ -7,7 +7,13 @@ import io
 from typing import Dict, List, Set, Any, Tuple
 
 def clean_cell(x): 
-    return str(x).strip() if pd.notna(x) else ""
+    if pd.isna(x):
+        return ""
+    val_str = str(x).strip()
+    # 🚀 自動去除 .0 浮點數尾數 (例如 2.0 -> 2, 1.0 -> 1)
+    if val_str.endswith('.0'):
+        val_str = val_str[:-2]
+    return val_str
 
 def is_valid_tooth(x):
     x = clean_cell(x)
@@ -119,9 +125,9 @@ def parse_periodontal_csv(file_stream) -> Tuple[Any, Set[int], bool, Dict[str, A
         for idx, val in enumerate(row):
             val_str = str(val).strip()
             if "Patient's Name" in val_str and idx + 2 < len(row):
-                patient_info["name"] = str(row[idx + 2]).strip()
+                patient_info["name"] = clean_cell(row[idx + 2])
             elif "Case Report No." in val_str and idx + 2 < len(row):
-                patient_info["case_no"] = str(row[idx + 2]).strip()
+                patient_info["case_no"] = clean_cell(row[idx + 2])
 
     tooth_rows = find_tooth_rows(df)
     missing_rows = find_missing_rows(df)
