@@ -129,7 +129,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     row_map = collect_comparison_row_indices(df)
     is_upper = (teeth[0] < 30)
 
-    # 2. 🚀 將項目標籤 (Label) 與 時段標籤 (Stage) 獨立拆分
+    # 2. 構建項目列表 (Label 與 Stage 拆分)
     if not is_comparison:
         active_row_metas = [
             {"label": "Probing Depth (B)" if is_upper else "Probing Depth (L)", "stage": "I", "r_key": "up_b_pd_i" if is_upper else "lo_l_pd_i", "type": "pd"},
@@ -184,26 +184,35 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             ]
 
     total_rows = 1 + len(active_row_metas)
-    # 🚀 雙期模式時使用 2 欄 Header (Label 欄 + Stage 欄)
     has_stage_col = is_comparison
     total_cols = (2 if has_stage_col else 1) + len(teeth)
 
+    # 🚀 3. 精確垂直與水平對齊計算
+    slide_w, slide_h = config.PPT_SLIDE_WIDTH, config.PPT_SLIDE_HEIGHT
+
     if not is_comparison:
         col_width_label, col_width_stage, col_width_data = Inches(2.2), Inches(0), Inches(1.8)
-        row_height, top_pos = Inches(config.TABLE_ROW_HEIGHT), Inches(1.3)
+        top_pos = Inches(1.3)
+        row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
-        col_width_label, col_width_stage, col_width_data = Inches(1.85), Inches(0.45), Inches(0.85)
-        row_height, top_pos = Inches(0.32), Inches(1.2)
+        # 對比模式：滿版貼齊
+        col_width_label, col_width_stage, col_width_data = Inches(2.1), Inches(0.5), Inches(0.95)
+        top_pos = Inches(0.85)  # 標題下方開始
+        bottom_margin = Inches(0.15) # 底部預留邊界
+        available_h = Inches(slide_h) - top_pos - bottom_margin
+        row_height = available_h / total_rows # 均分使垂直貼齊上下
 
     total_table_width = col_width_label + col_width_stage + (col_width_data * len(teeth))
     total_table_height = row_height * total_rows
-    left_pos = Inches(config.PPT_SLIDE_WIDTH) - total_table_width - Inches(0.3)
+    
+    # 🚀 右側完全貼齊投影片右邊緣 (left_pos + total_table_width = slide_w)
+    left_pos = Inches(slide_w) - total_table_width
 
     table_shape = slide.shapes.add_table(total_rows, total_cols, left_pos, top_pos, total_table_width, total_table_height)
     table = table_shape.table
     _remove_default_table_style(table)
 
-    # 3. 設定各欄寬度
+    # 4. 欄寬與列高設定
     table.columns[0].width = col_width_label
     if has_stage_col:
         table.columns[1].width = col_width_stage
@@ -219,7 +228,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     text_white, text_alert = _rgb(config.COLOR_TEXT_WHITE), _rgb(config.COLOR_TEXT_ALERT)
 
-    # 4. 表頭設定 (Tooth)
+    # 5. Header (Tooth & Stage)
     c_t0 = table.cell(0, 0); c_t0.vertical_anchor = MSO_ANCHOR.MIDDLE
     _apply_cell_density(c_t0); c_t0.fill.background()
     p_t0 = c_t0.text_frame.paragraphs[0]; p_t0.alignment = PP_ALIGN.CENTER
@@ -244,11 +253,11 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     f_rows = find_furcation_rows(df)
     dynamic_missing = set(missing_teeth)
 
-    # 5. 填寫資料列與標籤列
+    # 6. 資料填入
     for r_i, meta in enumerate(active_row_metas):
         r_ppt = r_i + 1
 
-        # Col 0: 項目標籤 (Label)
+        # Label
         c_lbl = table.cell(r_ppt, 0); c_lbl.vertical_anchor = MSO_ANCHOR.MIDDLE
         _apply_cell_density(c_lbl); c_lbl.fill.background()
         lbl_text = meta["label"]
@@ -257,7 +266,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             r_lbl = p_lbl.add_run(); r_lbl.text = lbl_text
             r_lbl.font.name, r_lbl.font.size, r_lbl.font.bold, r_lbl.font.color.rgb = config.FONT_PRIMARY, Pt(9.5 if is_comparison else 12), True, text_white
 
-        # Col 1: Stage 標籤 (I / R) (如有開啟 Stage 欄)
+        # Stage (I / R)
         if has_stage_col:
             c_stage = table.cell(r_ppt, 1); c_stage.vertical_anchor = MSO_ANCHOR.MIDDLE
             _apply_cell_density(c_stage); c_stage.fill.background()
@@ -267,7 +276,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                 r_stage = p_stage.add_run(); r_stage.text = stage_text
                 r_stage.font.name, r_stage.font.size, r_stage.font.bold, r_stage.font.color.rgb = config.FONT_PRIMARY, Pt(10), True, text_white
 
-        # Col 2~: 牙位數值數據
+        # Values
         for c_i, t in enumerate(teeth):
             cell_col_idx = data_start_col + c_i
             cell_d = table.cell(r_ppt, cell_col_idx); cell_d.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -324,7 +333,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.name, run.font.size = config.FONT_PRIMARY, Pt(10 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
-    # 6. 缺牙大合併 + 純白斜線 (從第 1 行數據列一路包覆到最後一行)
+    # 7. 缺牙合併 + 對角斜線
     for c_i, t in enumerate(teeth):
         if t in dynamic_missing:
             cell_col_idx = data_start_col + c_i
@@ -339,7 +348,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             merged.fill.background()
             _add_diagonal_strikethrough(merged)
 
-    # 7. 純白邊框刷新
+    # 8. 純白邊框刷新
     for r in range(total_rows):
         for c in range(total_cols):
             _set_cell_border_to_white(table.cell(r, c))
