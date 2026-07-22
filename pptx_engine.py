@@ -1,9 +1,8 @@
 # pptx_engine.py
 """
-簡報生成引擎：支援多開一欄獨立標示 Stage (I / R)，實現項目與時期的視覺分離。
-對比簡報（Initial vs Re-evaluation）實現右側貼齊投影片右緣、上下勻稱填滿投影片。
- Upper: Mobility -> KM -> PD(B) -> Rec(B) -> CAL(B) -> Furcation -> PD(P) -> Rec(P) -> CAL(P)
- Lower: PD(L) -> Rec(L) -> CAL(L) -> Mobility -> KM -> PD(B) -> Rec(B) -> CAL(B) -> Furcation
+簡報生成引擎：支援 Furcation 專科格式輸出 (例如 M1B2D1, B3L3, -)。
+Upper: Mobility -> KM -> PD(B) -> Rec(B) -> CAL(B) -> Furcation -> PD(P) -> Rec(P) -> CAL(P)
+Lower: PD(L) -> Rec(L) -> CAL(L) -> Mobility -> KM -> PD(B) -> Rec(B) -> CAL(B) -> Furcation
 """
 from io import BytesIO
 from typing import Dict, Set, Any, List
@@ -25,6 +24,43 @@ from core_parser import (
     clean_cell,
     find_furcation_rows
 )
+
+# 🚀 專科 Furcation 牙位與點位順序定義
+VALID_FURCATION_TEETH = {
+    18: ["M", "B", "D"], 17: ["M", "B", "D"], 16: ["M", "B", "D"],
+    26: ["M", "B", "D"], 27: ["M", "B", "D"], 28: ["M", "B", "D"],
+    14: ["M", "D"], 24: ["M", "D"],
+    36: ["B", "L"], 37: ["B", "L"], 38: ["B", "L"],
+    46: ["B", "L"], 47: ["B", "L"], 48: ["B", "L"]
+}
+
+# 🚀 羅馬數字與阿拉伯數字映射表
+GRADE_MAP = {
+    "1": "1", "I": "1",
+    "2": "2", "II": "2",
+    "3": "3", "III": "3"
+}
+
+def parse_tooth_furcation(df, tooth: int, col: int, f_info: dict) -> str:
+    """精確解析單顆牙齒之 Furcation Involvement 並格式化為 M1B2D1 / B3L3 / -"""
+    if tooth not in VALID_FURCATION_TEETH or f_info is None:
+        return "-"
+
+    target_sites = VALID_FURCATION_TEETH[tooth]
+    label_row = f_info["label_row"]
+    value_row = f_info["value_row"]
+
+    extracted = {}
+    for offset in range(3):
+        c = col + offset
+        if c < df.shape[1]:
+            lbl = clean_cell(df.iloc[label_row, c]).upper()
+            val = clean_cell(df.iloc[value_row, c]).upper()
+            if lbl in ["M", "B", "D", "L"] and val in GRADE_MAP:
+                extracted[lbl] = GRADE_MAP[val]
+
+    result_parts = [f"{s}{extracted[s]}" for s in target_sites if s in extracted]
+    return "".join(result_parts) if result_parts else "-"
 
 def _rgb(color_tuple):
     return RGBColor(*color_tuple)
@@ -130,7 +166,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     row_map = collect_comparison_row_indices(df)
     is_upper = (teeth[0] < 30)
 
-    # 2. 構建項目列表 (Label 與 Stage 拆分)
+    # 2. 項目清單
     if not is_comparison:
         active_row_metas = [
             {"label": "Probing Depth (B)" if is_upper else "Probing Depth (L)", "stage": "I", "r_key": "up_b_pd_i" if is_upper else "lo_l_pd_i", "type": "pd"},
@@ -188,7 +224,6 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     has_stage_col = is_comparison
     total_cols = (2 if has_stage_col else 1) + len(teeth)
 
-    # 🚀 3. 精確垂直與水平對齊計算
     slide_w, slide_h = config.PPT_SLIDE_WIDTH, config.PPT_SLIDE_HEIGHT
 
     if not is_comparison:
@@ -196,27 +231,23 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
         top_pos = Inches(1.3)
         row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
-        # 對比模式：滿版貼齊
         col_width_label, col_width_stage, col_width_data = Inches(2.1), Inches(0.5), Inches(0.95)
-        top_pos = Inches(0.85)  # 標題下方開始
-        bottom_margin = Inches(0.15) # 底部預留邊界
+        top_pos = Inches(0.85)
+        bottom_margin = Inches(0.15)
         available_h = Inches(slide_h) - top_pos - bottom_margin
-        row_height = int(available_h / total_rows) # 均分使垂直貼齊上下
+        row_height = available_h / total_rows
 
     total_table_width = col_width_label + col_width_stage + (col_width_data * len(teeth))
     total_table_height = row_height * total_rows
-    
-    # 🚀 右側完全貼齊投影片右邊緣 (left_pos + total_table_width = slide_w)
     left_pos = Inches(slide_w) - total_table_width
 
     table_shape = slide.shapes.add_table(total_rows, total_cols, left_pos, top_pos, total_table_width, total_table_height)
     table = table_shape.table
     _remove_default_table_style(table)
 
-    # 4. 欄寬與列高設定
-    table.columns[0].width = col_width_label
+    table.columns[0].width = int(col_width_label)
     if has_stage_col:
-        table.columns[1].width = col_width_stage
+        table.columns[1].width = int(col_width_stage)
         data_start_col = 2
     else:
         data_start_col = 1
@@ -229,7 +260,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     text_white, text_alert = _rgb(config.COLOR_TEXT_WHITE), _rgb(config.COLOR_TEXT_ALERT)
 
-    # 5. Header (Tooth & Stage)
+    # 3. Header
     c_t0 = table.cell(0, 0); c_t0.vertical_anchor = MSO_ANCHOR.MIDDLE
     _apply_cell_density(c_t0); c_t0.fill.background()
     p_t0 = c_t0.text_frame.paragraphs[0]; p_t0.alignment = PP_ALIGN.CENTER
@@ -254,7 +285,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     f_rows = find_furcation_rows(df)
     dynamic_missing = set(missing_teeth)
 
-    # 6. 資料填入
+    # 4. 資料列填寫
     for r_i, meta in enumerate(active_row_metas):
         r_ppt = r_i + 1
 
@@ -267,7 +298,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             r_lbl = p_lbl.add_run(); r_lbl.text = lbl_text
             r_lbl.font.name, r_lbl.font.size, r_lbl.font.bold, r_lbl.font.color.rgb = config.FONT_PRIMARY, Pt(9.5 if is_comparison else 12), True, text_white
 
-        # Stage (I / R)
+        # Stage
         if has_stage_col:
             c_stage = table.cell(r_ppt, 1); c_stage.vertical_anchor = MSO_ANCHOR.MIDDLE
             _apply_cell_density(c_stage); c_stage.fill.background()
@@ -311,13 +342,9 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "furc":
-                    text = "-"
-                    if len(f_rows) >= 2:
-                        f_info = f_rows[0] if is_upper else f_rows[-1]
-                        raw_f = {clean_cell(df.iloc[f_info["label_row"], col+o]).upper(): clean_cell(df.iloc[f_info["value_row"], col+o]) for o in range(3)}
-                        pref = ["M", "B", "D", "L"] if is_upper else ["B", "L", "M", "D"]
-                        extracted = "".join([f"{l}{raw_f[l]}" for l in pref if l in raw_f and raw_f[l] in ["1", "2", "3"]])
-                        if extracted: text = extracted
+                    # 🚀 調用專科 Furcation 解析函式
+                    f_info = f_rows[0] if (is_upper and len(f_rows) >= 1) else (f_rows[-1] if len(f_rows) >= 2 else None)
+                    text = parse_tooth_furcation(df, t, col, f_info)
                     run = p_d.add_run(); run.text = text
                     run.font.name, run.font.size = config.FONT_PRIMARY, Pt(10 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, text_white
@@ -334,7 +361,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.name, run.font.size = config.FONT_PRIMARY, Pt(10 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
-    # 7. 缺牙合併 + 對角斜線
+    # 5. 缺牙合併與斜線
     for c_i, t in enumerate(teeth):
         if t in dynamic_missing:
             cell_col_idx = data_start_col + c_i
@@ -349,7 +376,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             merged.fill.background()
             _add_diagonal_strikethrough(merged)
 
-    # 8. 純白邊框刷新
+    # 6. 純白邊框刷新
     for r in range(total_rows):
         for c in range(total_cols):
             _set_cell_border_to_white(table.cell(r, c))
