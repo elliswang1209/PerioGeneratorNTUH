@@ -44,7 +44,7 @@ if uploaded_file is not None:
         st.info("成功生成！")
         ppt_initial = create_six_sextants_presentation(df, missing_teeth)
         st.download_button(
-            label="🛸 下載【Initial 簡報】",
+            label="下載 Initial 簡報",
             data=ppt_initial,
             file_name="Periodontal_Sextants_Initial.pptx",
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
