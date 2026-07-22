@@ -1,12 +1,5 @@
 # pptx_engine.py
-"""
-簡報生成引擎：
-1. 對比表格 Data 字體一律提升至 12 Pt，標題與表頭 14 Pt，主標題 24 Pt
-2. 純化標題 (例如 Upper Right Sextant)
-3. Stage R 橘黃色顯示，項目欄同名垂直合併 (Vertical Merge)
-4. 🚀 專屬 Mobility 跨欄解析（完全相容羅馬數字 I, II, III 與阿拉伯數字 1, 2, 3）
-5. 🚀 對比模式下，若牙齒在 Stage R 仍有 PD >= 5mm，整欄繪製高質感正紅色高亮邊框！
-"""
+
 from io import BytesIO
 from typing import Dict, Set, Any, List
 import pandas as pd
@@ -68,7 +61,7 @@ def parse_tooth_furcation(df, tooth: int, col: int, f_info: dict) -> str:
 def parse_tooth_mobility(df, r_idx, col) -> str:
     """跨 3 欄掃描牙齒的 Mobility 數據，精確支援 I, II, III, 1, 2, 3 等格式"""
     if r_idx is None or pd.isna(r_idx) or int(r_idx) >= len(df):
-        return "-"
+        return "WNL"
     
     mob_map = {
         "1": "I", "I": "I",
@@ -265,16 +258,16 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     slide_w, slide_h = config.PPT_SLIDE_WIDTH, config.PPT_SLIDE_HEIGHT
 
     if not is_comparison:
-        col_width_label = Inches(2.2)
+        col_width_label = Inches(1.5)
         col_width_stage = Inches(0)
-        col_width_data  = Inches(1.8)
+        col_width_data  = Inches(1.2)
         top_pos = Inches(1.3)
         row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
-        col_width_label = Inches(2.2)
+        col_width_label = Inches(1.5)
         col_width_stage = Inches(0.5)
-        col_width_data  = Inches(0.95)
-        top_pos = Inches(0.85)
+        col_width_data  = Inches(0.8)
+        top_pos = Inches(0.25)
         bottom_margin = Inches(0.15)
         available_h = Inches(slide_h) - top_pos - bottom_margin
         row_height = available_h / total_rows
@@ -414,9 +407,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "mob":
-                    # 🚀 調用專屬跨欄 Mobility 解析器
                     val = parse_tooth_mobility(df, r_idx, col)
-                    
                     run = p_d.add_run(); run.text = val
                     run.font.name = config.FONT_PRIMARY
                     run.font.size = Pt(12) if is_comparison else Pt(14)
