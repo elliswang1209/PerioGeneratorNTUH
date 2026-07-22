@@ -18,11 +18,11 @@ st.subheader("可以生成 Initial 或是 Initial & Re-evalaution 的對比")
 uploaded_file = st.file_uploader("請上傳牙周檢查表 CSV / Excel 檔案", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    with st.spinner("後端解析引擎處理中，請稍候..."):
+    with st.spinner("處理中，請稍候..."):
         # 呼叫解析引擎
         df, missing_teeth, is_comparison, patient_info = parse_periodontal_csv(uploaded_file)
 
-    st.markdown("### 📊 六象限原生醫學簡報直出")
+    st.markdown("### 📊 簡報")
     
     # 呈現病患資訊 (若有解析出資訊)
     if patient_info.get('name') or patient_info.get('case_no'):
@@ -30,10 +30,10 @@ if uploaded_file is not None:
 
     # 🚀 根據數據類型僅顯示「單一」對應下載載點
     if is_comparison:
-        st.success("✨ 檢測到 Initial & Re-evaluation 雙期對比數據！已自動為您整合完整 6+6 頁簡報。")
+        st.success("檢測到 Initial & Re-evaluation 對比數據！")
         ppt_comparison = create_comparison_presentation(df, missing_teeth)
         st.download_button(
-            label="🛸 下載【Initial vs Re-eval 完整對比簡報】(6+6 頁 PPTX)",
+            label="下載 Initial vs Re-eval 對比簡報",
             data=ppt_comparison,
             file_name="Periodontal_Sextants_Initial_vs_ReEval.pptx",
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
