@@ -4,7 +4,7 @@
 1. 對比表格 Data 字體一律提升至 12 Pt，標題與表頭 14 Pt，主標題 24 Pt
 2. 純化標題 (例如 Upper Right Sextant)
 3. Stage R 橘黃色顯示，項目欄同名垂直合併 (Vertical Merge)
-4. 修復 Mobility (支援 Roman Numerals I, II, III 讀取)
+4. 🚀 專屬 Mobility 跨欄解析（完全相容羅馬數字 I, II, III 與阿拉伯數字 1, 2, 3）
 5. 🚀 對比模式下，若牙齒在 Stage R 仍有 PD >= 5mm，整欄繪製高質感正紅色高亮邊框！
 """
 from io import BytesIO
@@ -64,6 +64,31 @@ def parse_tooth_furcation(df, tooth: int, col: int, f_info: dict) -> str:
 
     result_parts = [f"{s}{extracted[s]}" for s in target_sites if s in extracted]
     return "".join(result_parts) if result_parts else "-"
+
+def parse_tooth_mobility(df, r_idx, col) -> str:
+    """跨 3 欄掃描牙齒的 Mobility 數據，精確支援 I, II, III, 1, 2, 3 等格式"""
+    if r_idx is None or pd.isna(r_idx) or int(r_idx) >= len(df):
+        return "-"
+    
+    mob_map = {
+        "1": "I", "I": "I",
+        "2": "II", "II": "II",
+        "3": "III", "III": "III"
+    }
+    
+    for offset in range(3):
+        c = col + offset
+        if c < df.shape[1]:
+            val = clean_cell(df.iloc[int(r_idx), c]).upper()
+            if val in mob_map:
+                return mob_map[val]
+            elif val in ["WNL", "0"]:
+                return "WNL"
+            elif val == "-":
+                return "-"
+            elif val:
+                return val
+    return "-"
 
 def _rgb(color_tuple):
     return RGBColor(*color_tuple)
@@ -305,7 +330,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     f_rows = find_furcation_rows(df)
     dynamic_missing = set(missing_teeth)
 
-    # 🚀 用於記錄各顆牙齒在 Re-eval 階段是否有 PD >= 5
+    # 用於記錄各顆牙齒在 Re-eval 階段是否有 PD >= 5
     teeth_with_high_pd_in_reeval = set()
 
     # 4. 資料列填寫
@@ -368,7 +393,6 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                         
                         if m_type == "pd" and display_val.isdigit() and int(display_val) >= 5:
                             run.font.bold = True; run.font.color.rgb = text_alert
-                            # 🚀 如果是在 R 階段有 PD >= 5，記錄該牙齒
                             if is_comparison and stage_text.upper() == "R":
                                 teeth_with_high_pd_in_reeval.add(t)
                         else:
@@ -390,10 +414,8 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "mob":
-                    # 🚀 修復 Mobility 讀取邏輯 (相容 1, 2, 3 與 羅馬數字 I, II, III)
-                    raw_mob = clean_cell(df.iloc[r_idx, col]).upper() if r_idx is not None else ""
-                    mob_map = {"1": "I", "I": "I", "2": "II", "II": "II", "3": "III", "III": "III"}
-                    val = mob_map.get(raw_mob, "-" if raw_mob in ["0", "", "-"] else raw_mob)
+                    # 🚀 調用專屬跨欄 Mobility 解析器
+                    val = parse_tooth_mobility(df, r_idx, col)
                     
                     run = p_d.add_run(); run.text = val
                     run.font.name = config.FONT_PRIMARY
@@ -453,7 +475,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             else:
                 r += 1
 
-    # 🚀 7. 邊框刷新 (若在 R 階段仍有 PD >= 5mm，整欄畫正紅色邊框；否則繪製純白邊框)
+    # 7. 邊框刷新 (若在 R 階段仍有 PD >= 5mm，整欄畫正紅色邊框；否則繪製純白邊框)
     RED_HEX = "FF0000"
     WHITE_HEX = "FFFFFF"
 
