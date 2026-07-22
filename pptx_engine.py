@@ -11,6 +11,11 @@ from pptx.dml.color import RGBColor
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
 
+from pptx.enum.shapes import MSO_CONNECTOR
+from pptx.dml.color import RGBColor
+from pptx.util import Pt
+
+    
 import config
 from core_parser import (
     find_tooth_rows, 
@@ -37,6 +42,27 @@ GRADE_MAP = {
 
 # 橘黃色設定
 COLOR_STAGE_R = RGBColor(255, 180, 0)
+
+def add_diagonal_line_to_merged_cell(slide, cell, color_rgb=(255, 255, 255), width_pt=1.5):
+    """
+    在指定儲存格（包含跨列合併儲存格）上繪製從左上到右下的向量對角斜線
+    """
+    # 取得儲存格在 Slide 上的絕對座標與尺寸
+    x1 = cell.left
+    y1 = cell.top
+    x2 = cell.left + cell.width
+    y2 = cell.top + cell.height
+
+    # 新增一條直線連接 (x1, y1) -> (x2, y2)
+    line = slide.shapes.add_connector(
+        MSO_CONNECTOR.STRAIGHT, x1, y1, x2, y2
+    )
+    
+    # 設定斜線樣式 (顏色與線條粗細)
+    line.line.color.rgb = RGBColor(*color_rgb)
+    line.line.width = Pt(width_pt)
+    return line
+
 
 def parse_tooth_furcation(df, tooth: int, col: int, f_info: dict) -> str:
     if tooth not in VALID_FURCATION_TEETH or f_info is None:
@@ -418,19 +444,27 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
     # 5. 缺牙大合併與斜線
+    # 缺牙大合併與向量劃斜線範例
     for c_i, t in enumerate(teeth):
         if t in dynamic_missing:
             cell_col_idx = data_start_col + c_i
             start_cell = table.cell(1, cell_col_idx)
             end_cell = table.cell(total_rows - 1, cell_col_idx)
+            
+            # 1. 執行跨列合併
             start_cell.merge(end_cell)
             
-            merged = table.cell(1, cell_col_idx)
-            merged.vertical_anchor = MSO_ANCHOR.MIDDLE
-            merged.text_frame.clear()
-            _apply_cell_density(merged)
-            merged.fill.background()
-            _add_diagonal_strikethrough(merged)
+            merged_cell = table.cell(1, cell_col_idx)
+            merged_cell.text_frame.clear()
+            merged_cell.fill.background() # 保持透明背景
+            
+            # 2. 精確畫出貫穿整個合併欄位的對角斜線 (白色 1.5pt)
+            add_diagonal_line_to_merged_cell(
+                slide, 
+                merged_cell, 
+                color_rgb=(255, 255, 255), 
+                width_pt=1.5
+            )
 
     # 6. 自動合併相鄰且文字相同的第 0 欄標題列 (Vertical Merge)
     if is_comparison:
