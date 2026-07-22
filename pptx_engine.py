@@ -116,7 +116,7 @@ def create_six_sextants_presentation(df, missing_teeth: Set[int]) -> BytesIO:
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name} - Initial Charting", teeth, df, missing_teeth, is_comparison=False)
+        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=False)
 
     stream = BytesIO()
     prs.save(stream)
@@ -131,11 +131,11 @@ def create_comparison_presentation(df, missing_teeth: Set[int]) -> BytesIO:
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name} - Initial Stage", teeth, df, missing_teeth, is_comparison=False)
+        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=False)
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name} - Initial vs Re-evaluation", teeth, df, missing_teeth, is_comparison=True)
+        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=True)
 
     stream = BytesIO()
     prs.save(stream)
