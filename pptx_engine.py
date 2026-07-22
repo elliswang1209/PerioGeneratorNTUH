@@ -223,15 +223,15 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     # 🚀 3. 寬度設定 (可依需求微調 Inches 數值)
     if not is_comparison:
-        col_width_label = Inches(2.2)
+        col_width_label = Inches(2.0)
         col_width_stage = Inches(0)
-        col_width_data  = Inches(1.8)
+        col_width_data  = Inches(1.6)
         top_pos = Inches(1.3)
         row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
-        col_width_label = Inches(2.1)   # 第 1 欄：項目名稱寬度
+        col_width_label = Inches(1.9)   # 第 1 欄：項目名稱寬度
         col_width_stage = Inches(0.5)   # 第 2 欄：I / R 寬度
-        col_width_data  = Inches(0.95)  # 第 3 欄起：數據欄寬度
+        col_width_data  = Inches(0.8)  # 第 3 欄起：數據欄寬度
         top_pos = Inches(0.85)
         bottom_margin = Inches(0.15)
         available_h = Inches(slide_h) - top_pos - bottom_margin
