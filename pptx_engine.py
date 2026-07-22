@@ -1,5 +1,13 @@
 # pptx_engine.py
-
+"""
+簡報生成引擎：
+1. 對比表格 Data 字體一律提升至 12 Pt，標題與表頭 14 Pt，主標題 36 Pt
+2. 純化標題 (例如 Upper Right Sextant)
+3. Stage R 橘黃色顯示，項目欄同名垂直合併 (Vertical Merge)
+4. 專屬 Mobility 跨欄解析（完全相容羅馬數字 I, II, III 與阿拉伯數字 1, 2, 3）
+5. 對比模式下，若牙齒在 Stage R 仍有 PD >= 5mm，整欄繪製高質感正紅色高亮邊框
+6. Initial 表格自動合併 Recession 上下兩列的標題 Cell (Col 0)
+"""
 from io import BytesIO
 from typing import Dict, Set, Any, List
 import pandas as pd
@@ -11,11 +19,6 @@ from pptx.dml.color import RGBColor
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
 
-from pptx.enum.shapes import MSO_CONNECTOR
-from pptx.dml.color import RGBColor
-from pptx.util import Pt
-
-    
 import config
 from core_parser import (
     find_tooth_rows, 
@@ -42,29 +45,6 @@ GRADE_MAP = {
 
 # 橘黃色設定
 COLOR_STAGE_R = RGBColor(255, 180, 0)
-
-def add_diagonal_line_to_table_range(slide, table_shape, start_row: int, end_row: int, col_idx: int, color_rgb=(255, 255, 255), width_pt=1.5):
-    """
-    在表格指定的跨列區域（start_row ~ end_row, col_idx）繪製穿透整欄的對角斜線
-    """
-    table = table_shape.table
-    
-    # 計算該欄位的左上點 (x1, y1)
-    x1 = table_shape.left + sum(table.columns[c].width for c in range(col_idx))
-    y1 = table_shape.top + sum(table.rows[r].height for r in range(start_row))
-    
-    # 計算右下點 (x2, y2)
-    w = table.columns[col_idx].width
-    h = sum(table.rows[r].height for r in range(start_row, end_row + 1))
-    
-    x2 = x1 + w
-    y2 = y1 + h
-    
-    # 建立向量直線 Shape
-    line = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x1, y1, x2, y2)
-    line.line.color.rgb = RGBColor(*color_rgb)
-    line.line.width = Pt(width_pt)
-    return line
 
 def parse_tooth_furcation(df, tooth: int, col: int, f_info: dict) -> str:
     if tooth not in VALID_FURCATION_TEETH or f_info is None:
@@ -141,19 +121,6 @@ def _set_cell_border_custom(cell, left_hex="FFFFFF", right_hex="FFFFFF", top_hex
             f'</a:{side}>'
         )
         tcPr.append(parse_xml(border_xml))
-
-def _add_diagonal_strikethrough(cell):
-    tcPr = cell._tc.get_or_add_tcPr()
-    diagonal_xml = (
-        f'<a:lnDiagonalDown {nsdecls("a")} w="12700" cmpd="s" algn="ctr">'
-        f'  <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
-        f'  <a:prstDash val="solid"/>'
-        f'</a:lnDiagonalDown>'
-    )
-    existing = tcPr.find(f'{{http://schemas.openxmlformats.org/drawingml/2006/main}}lnDiagonalDown')
-    if existing is not None:
-        tcPr.remove(existing)
-    tcPr.append(parse_xml(diagonal_xml))
 
 def _remove_default_table_style(table):
     try:
@@ -445,8 +412,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.size = Pt(12) if is_comparison else Pt(14)
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
-    # 5. 缺牙大合併與斜線
-
+    # 5. 缺牙大合併 (已移除跨列斜線)
     for c_i, t in enumerate(teeth):
         if t in dynamic_missing:
             cell_col_idx = data_start_col + c_i
@@ -463,19 +429,29 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             _apply_cell_density(merged)
             merged.fill.background()
 
-            # 🚀 精確劃出穿透整欄合併儲存格的對角斜線
-            add_diagonal_line_to_table_range(
-                slide, 
-                table_shape, 
-                start_row, 
-                end_row, 
-                cell_col_idx, 
-                color_rgb=(255, 255, 255), 
-                width_pt=1.5
-            )
+    # 6. 自動合併標題列
+    if not is_comparison:
+        # 🚀 在 Initial 表格下，將 Recession 上下兩列（Row 3 與 Row 4）的 Col 0 進行垂直合併
+        c_rec1 = table.cell(3, 0)
+        c_rec2 = table.cell(4, 0)
+        c_rec1.merge(c_rec2)
 
-    # 6. 自動合併相鄰且文字相同的第 0 欄標題列 (Vertical Merge)
-    if is_comparison:
+        merged_rec = table.cell(3, 0)
+        merged_rec.vertical_anchor = MSO_ANCHOR.MIDDLE
+        merged_rec.text_frame.clear()
+        _apply_cell_density(merged_rec)
+        merged_rec.fill.background()
+
+        p_rec = merged_rec.text_frame.paragraphs[0]
+        p_rec.alignment = PP_ALIGN.CENTER
+        r_rec = p_rec.add_run()
+        r_rec.text = "Recession"
+        r_rec.font.name = config.FONT_PRIMARY
+        r_rec.font.size = Pt(12)
+        r_rec.font.bold = True
+        r_rec.font.color.rgb = text_white
+    else:
+        # 對比表格：自動合併相鄰且文字相同的第 0 欄標題列 (Vertical Merge)
         r = 1
         while r < total_rows - 1:
             cell_curr = table.cell(r, 0)
