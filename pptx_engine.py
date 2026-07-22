@@ -1,8 +1,6 @@
 # pptx_engine.py
 """
-簡報生成引擎：支援 Furcation 專科格式輸出 (例如 M1B2D1, B3L3, -)。
-Upper: Mobility -> KM -> PD(B) -> Rec(B) -> CAL(B) -> Furcation -> PD(P) -> Rec(P) -> CAL(P)
-Lower: PD(L) -> Rec(L) -> CAL(L) -> Mobility -> KM -> PD(B) -> Rec(B) -> CAL(B) -> Furcation
+簡報生成引擎：支援標題相同自動跨列合併 (Merge)、獨立 Stage 欄、專科 Furcation 及右側貼齊滿版。
 """
 from io import BytesIO
 from typing import Dict, Set, Any, List
@@ -25,7 +23,6 @@ from core_parser import (
     find_furcation_rows
 )
 
-# 🚀 專科 Furcation 牙位與點位順序定義
 VALID_FURCATION_TEETH = {
     18: ["M", "B", "D"], 17: ["M", "B", "D"], 16: ["M", "B", "D"],
     26: ["M", "B", "D"], 27: ["M", "B", "D"], 28: ["M", "B", "D"],
@@ -34,7 +31,6 @@ VALID_FURCATION_TEETH = {
     46: ["B", "L"], 47: ["B", "L"], 48: ["B", "L"]
 }
 
-# 🚀 羅馬數字與阿拉伯數字映射表
 GRADE_MAP = {
     "1": "1", "I": "1",
     "2": "2", "II": "2",
@@ -42,7 +38,6 @@ GRADE_MAP = {
 }
 
 def parse_tooth_furcation(df, tooth: int, col: int, f_info: dict) -> str:
-    """精確解析單顆牙齒之 Furcation Involvement 並格式化為 M1B2D1 / B3L3 / -"""
     if tooth not in VALID_FURCATION_TEETH or f_info is None:
         return "-"
 
@@ -116,7 +111,7 @@ def create_six_sextants_presentation(df, missing_teeth: Set[int]) -> BytesIO:
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=False)
+        _draw_sextant_slide(slide, f"{sextant_name} - Initial Charting", teeth, df, missing_teeth, is_comparison=False)
 
     stream = BytesIO()
     prs.save(stream)
@@ -131,11 +126,11 @@ def create_comparison_presentation(df, missing_teeth: Set[int]) -> BytesIO:
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=False)
+        _draw_sextant_slide(slide, f"{sextant_name} - Initial Stage", teeth, df, missing_teeth, is_comparison=False)
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=True)
+        _draw_sextant_slide(slide, f"{sextant_name} - Initial vs Re-evaluation", teeth, df, missing_teeth, is_comparison=True)
 
     stream = BytesIO()
     prs.save(stream)
@@ -166,7 +161,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     row_map = collect_comparison_row_indices(df)
     is_upper = (teeth[0] < 30)
 
-    # 2. 項目清單
+    # 2. 項目標籤清單
     if not is_comparison:
         active_row_metas = [
             {"label": "Probing Depth (B)" if is_upper else "Probing Depth (L)", "stage": "I", "r_key": "up_b_pd_i" if is_upper else "lo_l_pd_i", "type": "pd"},
@@ -226,12 +221,17 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     slide_w, slide_h = config.PPT_SLIDE_WIDTH, config.PPT_SLIDE_HEIGHT
 
+    # 🚀 3. 寬度設定 (可依需求微調 Inches 數值)
     if not is_comparison:
-        col_width_label, col_width_stage, col_width_data = Inches(2.2), Inches(0), Inches(1.8)
+        col_width_label = Inches(2.2)
+        col_width_stage = Inches(0)
+        col_width_data  = Inches(1.8)
         top_pos = Inches(1.3)
         row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
-        col_width_label, col_width_stage, col_width_data = Inches(2.1), Inches(0.5), Inches(0.95)
+        col_width_label = Inches(2.1)   # 第 1 欄：項目名稱寬度
+        col_width_stage = Inches(0.5)   # 第 2 欄：I / R 寬度
+        col_width_data  = Inches(0.95)  # 第 3 欄起：數據欄寬度
         top_pos = Inches(0.85)
         bottom_margin = Inches(0.15)
         available_h = Inches(slide_h) - top_pos - bottom_margin
@@ -260,7 +260,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     text_white, text_alert = _rgb(config.COLOR_TEXT_WHITE), _rgb(config.COLOR_TEXT_ALERT)
 
-    # 3. Header
+    # 4. 表頭 (Tooth & Stage)
     c_t0 = table.cell(0, 0); c_t0.vertical_anchor = MSO_ANCHOR.MIDDLE
     _apply_cell_density(c_t0); c_t0.fill.background()
     p_t0 = c_t0.text_frame.paragraphs[0]; p_t0.alignment = PP_ALIGN.CENTER
@@ -285,7 +285,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     f_rows = find_furcation_rows(df)
     dynamic_missing = set(missing_teeth)
 
-    # 4. 資料列填寫
+    # 5. 資料列填寫
     for r_i, meta in enumerate(active_row_metas):
         r_ppt = r_i + 1
 
@@ -342,7 +342,6 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "furc":
-                    # 🚀 調用專科 Furcation 解析函式
                     f_info = f_rows[0] if (is_upper and len(f_rows) >= 1) else (f_rows[-1] if len(f_rows) >= 2 else None)
                     text = parse_tooth_furcation(df, t, col, f_info)
                     run = p_d.add_run(); run.text = text
@@ -361,7 +360,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.name, run.font.size = config.FONT_PRIMARY, Pt(10 if is_comparison else 14)
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
-    # 5. 缺牙合併與斜線
+    # 6. 缺牙大合併與斜線
     for c_i, t in enumerate(teeth):
         if t in dynamic_missing:
             cell_col_idx = data_start_col + c_i
@@ -376,7 +375,39 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             merged.fill.background()
             _add_diagonal_strikethrough(merged)
 
-    # 6. 純白邊框刷新
+    # 🚀 7. 自動合併相鄰且文字相同的第 0 欄標題列 (Vertical Merge)
+    if is_comparison:
+        r = 1
+        while r < total_rows - 1:
+            cell_curr = table.cell(r, 0)
+            cell_next = table.cell(r + 1, 0)
+            
+            txt_curr = cell_curr.text_frame.text.strip()
+            txt_next = cell_next.text_frame.text.strip()
+            
+            if txt_curr and txt_curr == txt_next:
+                cell_curr.merge(cell_next)
+                
+                merged_cell = table.cell(r, 0)
+                merged_cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+                merged_cell.text_frame.clear()
+                _apply_cell_density(merged_cell)
+                merged_cell.fill.background()
+                
+                p_m = merged_cell.text_frame.paragraphs[0]
+                p_m.alignment = PP_ALIGN.CENTER
+                r_m = p_m.add_run()
+                r_m.text = txt_curr
+                r_m.font.name = config.FONT_PRIMARY
+                r_m.font.size = Pt(9.5)
+                r_m.font.bold = True
+                r_m.font.color.rgb = text_white
+                
+                r += 2
+            else:
+                r += 1
+
+    # 8. 純白邊框刷新
     for r in range(total_rows):
         for c in range(total_cols):
             _set_cell_border_to_white(table.cell(r, c))
