@@ -72,6 +72,12 @@ def get_missing_teeth_set(df, tooth_rows, missing_rows):
         if t // 10 in [3, 4] and lo_m is not None and c + 1 < df.shape[1] and clean_cell(df.iloc[lo_m, c + 1]).upper() == "TRUE": missing_teeth.add(t)
     return missing_teeth
 
+def find_missing_teeth(df) -> Set[int]:
+    """快捷缺牙掃描函式，確保 app.py 呼叫不拋錯"""
+    tooth_rows = find_tooth_rows(df)
+    missing_rows = find_missing_rows(df)
+    return get_missing_teeth_set(df, tooth_rows, missing_rows)
+
 def collect_comparison_row_indices(df):
     """智慧型分區列號收集器：修復 CAL 被 MOBILITY SCALE 誤讀之 Bug"""
     is_comp = is_comparison_file(df)
