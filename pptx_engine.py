@@ -1,6 +1,10 @@
 # pptx_engine.py
 """
-簡報生成引擎：支援標題相同自動跨列合併 (Merge)、獨立 Stage 欄、專科 Furcation 及右側貼齊滿版。
+簡報生成引擎：
+1. 簡報標題純化為單純象限名稱 (如 Upper Right Sextant)
+2. 移除 Stage 表頭字樣
+3. R 標籤字體顯示為橘黃色 (RGB: 255, 180, 0)
+4. 項目標籤同名自動垂直合併 (Vertical Merge)
 """
 from io import BytesIO
 from typing import Dict, Set, Any, List
@@ -36,6 +40,9 @@ GRADE_MAP = {
     "2": "2", "II": "2",
     "3": "3", "III": "3"
 }
+
+# 橘黃色設定
+COLOR_STAGE_R = RGBColor(255, 180, 0)
 
 def parse_tooth_furcation(df, tooth: int, col: int, f_info: dict) -> str:
     if tooth not in VALID_FURCATION_TEETH or f_info is None:
@@ -111,7 +118,8 @@ def create_six_sextants_presentation(df, missing_teeth: Set[int]) -> BytesIO:
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=False)
+        # 🚀 標題純化：只用象限名稱 (例如 Upper Right Sextant)
+        _draw_sextant_slide(slide, sextant_name, teeth, df, missing_teeth, is_comparison=False)
 
     stream = BytesIO()
     prs.save(stream)
@@ -124,13 +132,15 @@ def create_comparison_presentation(df, missing_teeth: Set[int]) -> BytesIO:
     prs.slide_height = Inches(config.PPT_SLIDE_HEIGHT)
     blank_layout = prs.slide_layouts[6]
 
+    # 前 6 頁：Initial Stage
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=False)
+        _draw_sextant_slide(slide, sextant_name, teeth, df, missing_teeth, is_comparison=False)
 
+    # 後 6 頁：Initial vs Re-evaluation
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=True)
+        _draw_sextant_slide(slide, sextant_name, teeth, df, missing_teeth, is_comparison=True)
 
     stream = BytesIO()
     prs.save(stream)
@@ -141,7 +151,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     slide.background.fill.solid()
     slide.background.fill.fore_color.rgb = _rgb(config.COLOR_BG_DARK)
 
-    # 1. 標題
+    # 1. 標題 (純象限名稱，如 Upper Right Sextant)
     tx_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.2), Inches(12), Inches(0.8))
     p = tx_box.text_frame.paragraphs[0]
     p.text = title_text
@@ -221,18 +231,17 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     slide_w, slide_h = config.PPT_SLIDE_WIDTH, config.PPT_SLIDE_HEIGHT
 
-    # 🚀 3. 寬度設定 (可依需求微調 Inches 數值)
     if not is_comparison:
-        col_width_label = Inches(2.0)
+        col_width_label = Inches(1.8)
         col_width_stage = Inches(0)
-        col_width_data  = Inches(1.6)
+        col_width_data  = Inches(1.2)
         top_pos = Inches(1.3)
         row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
-        col_width_label = Inches(1.5)   # 第 1 欄：項目名稱寬度
-        col_width_stage = Inches(0.5)   # 第 2 欄：I / R 寬度
-        col_width_data  = Inches(0.8)  # 第 3 欄起：數據欄寬度
-        top_pos = Inches(0.05)
+        col_width_label = Inches(1.8)
+        col_width_stage = Inches(0.5)
+        col_width_data  = Inches(0.8)
+        top_pos = Inches(0.5)
         bottom_margin = Inches(0.15)
         available_h = Inches(slide_h) - top_pos - bottom_margin
         row_height = available_h / total_rows
@@ -260,7 +269,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     text_white, text_alert = _rgb(config.COLOR_TEXT_WHITE), _rgb(config.COLOR_TEXT_ALERT)
 
-    # 4. 表頭 (Tooth & Stage)
+    # 4. 表頭 (Col 0: Tooth, Col 1: 空白, Col 2~: 牙號)
     c_t0 = table.cell(0, 0); c_t0.vertical_anchor = MSO_ANCHOR.MIDDLE
     _apply_cell_density(c_t0); c_t0.fill.background()
     p_t0 = c_t0.text_frame.paragraphs[0]; p_t0.alignment = PP_ALIGN.CENTER
@@ -268,11 +277,9 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     r_t0.font.name, r_t0.font.size, r_t0.font.bold, r_t0.font.color.rgb = config.FONT_PRIMARY, Pt(11 if is_comparison else 14), True, text_white
 
     if has_stage_col:
+        # 🚀 移除 Stage 表頭文字，保持背景極簡
         c_st = table.cell(0, 1); c_st.vertical_anchor = MSO_ANCHOR.MIDDLE
         _apply_cell_density(c_st); c_st.fill.background()
-        p_st = c_st.text_frame.paragraphs[0]; p_st.alignment = PP_ALIGN.CENTER
-        r_st = p_st.add_run(); r_st.text = "Stage"
-        r_st.font.name, r_st.font.size, r_st.font.bold, r_st.font.color.rgb = config.FONT_PRIMARY, Pt(11), True, text_white
 
     for c_i, t in enumerate(teeth):
         cell_col_idx = data_start_col + c_i
@@ -289,7 +296,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     for r_i, meta in enumerate(active_row_metas):
         r_ppt = r_i + 1
 
-        # Label
+        # Label (Col 0)
         c_lbl = table.cell(r_ppt, 0); c_lbl.vertical_anchor = MSO_ANCHOR.MIDDLE
         _apply_cell_density(c_lbl); c_lbl.fill.background()
         lbl_text = meta["label"]
@@ -298,7 +305,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             r_lbl = p_lbl.add_run(); r_lbl.text = lbl_text
             r_lbl.font.name, r_lbl.font.size, r_lbl.font.bold, r_lbl.font.color.rgb = config.FONT_PRIMARY, Pt(9.5 if is_comparison else 12), True, text_white
 
-        # Stage
+        # Stage (Col 1: I 或 R)
         if has_stage_col:
             c_stage = table.cell(r_ppt, 1); c_stage.vertical_anchor = MSO_ANCHOR.MIDDLE
             _apply_cell_density(c_stage); c_stage.fill.background()
@@ -306,9 +313,15 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             if stage_text:
                 p_stage = c_stage.text_frame.paragraphs[0]; p_stage.alignment = PP_ALIGN.CENTER
                 r_stage = p_stage.add_run(); r_stage.text = stage_text
-                r_stage.font.name, r_stage.font.size, r_stage.font.bold, r_stage.font.color.rgb = config.FONT_PRIMARY, Pt(10), True, text_white
+                r_stage.font.name, r_stage.font.size, r_stage.font.bold = config.FONT_PRIMARY, Pt(10), True
+                
+                # 🚀 R 標籤顯示為橘黃色，I 保持白色
+                if stage_text.upper() == "R":
+                    r_stage.font.color.rgb = COLOR_STAGE_R
+                else:
+                    r_stage.font.color.rgb = text_white
 
-        # Values
+        # Values (Col 2~)
         for c_i, t in enumerate(teeth):
             cell_col_idx = data_start_col + c_i
             cell_d = table.cell(r_ppt, cell_col_idx); cell_d.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -375,7 +388,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             merged.fill.background()
             _add_diagonal_strikethrough(merged)
 
-    # 🚀 7. 自動合併相鄰且文字相同的第 0 欄標題列 (Vertical Merge)
+    # 7. 自動合併相鄰且文字相同的第 0 欄標題列 (Vertical Merge)
     if is_comparison:
         r = 1
         while r < total_rows - 1:
