@@ -73,10 +73,9 @@ def get_missing_teeth_set(df, tooth_rows, missing_rows):
     return missing_teeth
 
 def collect_comparison_row_indices(df):
-    """智慧型分區列號收集器：專門解決 Upper/Lower Arch 的 Buccal/Palatal/Lingual 列對應"""
+    """智慧型分區列號收集器：完整包覆 PD, GM, CAL, KM, Mobility"""
     is_comp = is_comparison_file(df)
 
-    # 尋找下顎開始的分割線行數
     midpoint = len(df) // 2
     for r in range(len(df)):
         row_str = " ".join([str(df.iloc[r, c]) for c in range(df.shape[1]) if pd.notna(df.iloc[r, c])])
@@ -102,6 +101,11 @@ def collect_comparison_row_indices(df):
         elif ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "up_b_gm_i" in res and "up_p_gm_i" not in res:
             res["up_p_gm_i"] = r; res["up_p_gm_r"] = r + 1 if is_comp else r
 
+        if "CAL" in prefix and "up_b_cal_i" not in res:
+            res["up_b_cal_i"] = r; res["up_b_cal_r"] = r + 1 if is_comp else r
+        elif "CAL" in prefix and "up_b_cal_i" in res and "up_p_cal_i" not in res:
+            res["up_p_cal_i"] = r; res["up_p_cal_r"] = r + 1 if is_comp else r
+
         if "KM" in prefix and "up_km_i" not in res:
             res["up_km_i"] = r; res["up_km_r"] = r + 1 if is_comp else r
 
@@ -123,6 +127,11 @@ def collect_comparison_row_indices(df):
             res["lo_l_gm_i"] = r; res["lo_l_gm_r"] = r + 1 if is_comp else r
         elif ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "lo_l_gm_i" in res and "lo_b_gm_i" not in res:
             res["lo_b_gm_i"] = r; res["lo_b_gm_r"] = r + 1 if is_comp else r
+
+        if "CAL" in prefix and "lo_l_cal_i" not in res:
+            res["lo_l_cal_i"] = r; res["lo_l_cal_r"] = r + 1 if is_comp else r
+        elif "CAL" in prefix and "lo_l_cal_i" in res and "lo_b_cal_i" not in res:
+            res["lo_b_cal_i"] = r; res["lo_b_cal_r"] = r + 1 if is_comp else r
 
         if "KM" in prefix and "lo_km_i" not in res:
             res["lo_km_i"] = r; res["lo_km_r"] = r + 1 if is_comp else r
