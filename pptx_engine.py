@@ -1,10 +1,11 @@
 # pptx_engine.py
 """
 簡報生成引擎：
-- 對比表格 Data 字體一律提升至 12 Pt
-- 對比表格 標題與表頭一律提升至 14 Pt
-- 純化標題 (Upper Right Sextant)
-- Stage R 橘黃色顯示，項目欄同名垂直合併 (Vertical Merge)
+1. 對比表格 Data 字體一律提升至 12 Pt，標題與表頭 14 Pt，主標題 24 Pt
+2. 純化標題 (例如 Upper Right Sextant)
+3. Stage R 橘黃色顯示，項目欄同名垂直合併 (Vertical Merge)
+4. 修復 Mobility (支援 Roman Numerals I, II, III 讀取)
+5. 🚀 對比模式下，若牙齒在 Stage R 仍有 PD >= 5mm，整欄繪製高質感正紅色高亮邊框！
 """
 from io import BytesIO
 from typing import Dict, Set, Any, List
@@ -68,25 +69,34 @@ def _rgb(color_tuple):
     return RGBColor(*color_tuple)
 
 def _apply_cell_density(cell):
-    # 🚀 適度縮減內邊界，確保 12 Pt 數據數字在 0.36" 高的列中呼吸順暢不擠壓
     cell.margin_top = Inches(0.01)
     cell.margin_bottom = Inches(0.01)
     cell.margin_left = Inches(0.02)
     cell.margin_right = Inches(0.02)
 
-def _set_cell_border_to_white(cell):
+def _set_cell_border_custom(cell, left_hex="FFFFFF", right_hex="FFFFFF", top_hex="FFFFFF", bottom_hex="FFFFFF", width_pt=1.0):
     tcPr = cell._tc.get_or_add_tcPr()
-    border_xml = (
-        f'<a:ln {nsdecls("a")} w="12700" cmpd="s" algn="ctr">'
-        f'  <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
-        f'  <a:prstDash val="solid"/>'
-        f'</a:ln>'
-    )
-    for side in ['lnL', 'lnR', 'lnT', 'lnB']:
+    w_val = str(int(width_pt * 12700))
+    
+    sides = {
+        'lnL': left_hex,
+        'lnR': right_hex,
+        'lnT': top_hex,
+        'lnB': bottom_hex
+    }
+    
+    for side, hex_color in sides.items():
         existing = tcPr.find(f'{{http://schemas.openxmlformats.org/drawingml/2006/main}}{side}')
         if existing is not None:
             tcPr.remove(existing)
-        tcPr.append(parse_xml(f'<a:{side} {nsdecls("a")}>{border_xml}</a:{side}>'))
+        
+        border_xml = (
+            f'<a:{side} {nsdecls("a")} w="{w_val}" cmpd="s" algn="ctr">'
+            f'  <a:solidFill><a:srgbClr val="{hex_color}"/></a:solidFill>'
+            f'  <a:prstDash val="solid"/>'
+            f'</a:{side}>'
+        )
+        tcPr.append(parse_xml(border_xml))
 
 def _add_diagonal_strikethrough(cell):
     tcPr = cell._tc.get_or_add_tcPr()
@@ -154,7 +164,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     p = tx_box.text_frame.paragraphs[0]
     p.text = title_text
     p.font.name = config.FONT_PRIMARY
-    p.font.size = Pt(36) # 🚀 主標題加大至 24 Pt
+    p.font.size = Pt(24)
     p.font.bold = True
     p.font.italic = True
     p.font.underline = True
@@ -230,17 +240,16 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     slide_w, slide_h = config.PPT_SLIDE_WIDTH, config.PPT_SLIDE_HEIGHT
 
     if not is_comparison:
-        col_width_label = Inches(1.6)
+        col_width_label = Inches(2.2)
         col_width_stage = Inches(0)
-        col_width_data  = Inches(1.2)
-        top_pos = Inches(0.8)
+        col_width_data  = Inches(1.8)
+        top_pos = Inches(1.3)
         row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
-        # 對比模式佈局
-        col_width_label = Inches(1.6)
+        col_width_label = Inches(2.2)
         col_width_stage = Inches(0.5)
-        col_width_data  = Inches(0.8)
-        top_pos = Inches(0.25)
+        col_width_data  = Inches(0.95)
+        top_pos = Inches(0.85)
         bottom_margin = Inches(0.15)
         available_h = Inches(slide_h) - top_pos - bottom_margin
         row_height = available_h / total_rows
@@ -274,7 +283,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     p_t0 = c_t0.text_frame.paragraphs[0]; p_t0.alignment = PP_ALIGN.CENTER
     r_t0 = p_t0.add_run(); r_t0.text = "Tooth"
     r_t0.font.name = config.FONT_PRIMARY
-    r_t0.font.size = Pt(14) # 🚀 標題提升至 14 Pt
+    r_t0.font.size = Pt(14)
     r_t0.font.bold = True
     r_t0.font.color.rgb = text_white
 
@@ -289,18 +298,21 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
         p_t = c_t.text_frame.paragraphs[0]; p_t.alignment = PP_ALIGN.CENTER
         r_t = p_t.add_run(); r_t.text = str(t)
         r_t.font.name = config.FONT_PRIMARY
-        r_t.font.size = Pt(14) # 🚀 牙號標題提升至 14 Pt
+        r_t.font.size = Pt(14)
         r_t.font.bold = True
         r_t.font.color.rgb = text_white
 
     f_rows = find_furcation_rows(df)
     dynamic_missing = set(missing_teeth)
 
+    # 🚀 用於記錄各顆牙齒在 Re-eval 階段是否有 PD >= 5
+    teeth_with_high_pd_in_reeval = set()
+
     # 4. 資料列填寫
     for r_i, meta in enumerate(active_row_metas):
         r_ppt = r_i + 1
 
-        # Label (Col 0 項目標籤)
+        # Label (Col 0)
         c_lbl = table.cell(r_ppt, 0); c_lbl.vertical_anchor = MSO_ANCHOR.MIDDLE
         _apply_cell_density(c_lbl); c_lbl.fill.background()
         lbl_text = meta["label"]
@@ -308,11 +320,11 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             p_lbl = c_lbl.text_frame.paragraphs[0]; p_lbl.alignment = PP_ALIGN.CENTER
             r_lbl = p_lbl.add_run(); r_lbl.text = lbl_text
             r_lbl.font.name = config.FONT_PRIMARY
-            r_lbl.font.size = Pt(14) if is_comparison else Pt(12) # 🚀 項目標題提升至 14 Pt
+            r_lbl.font.size = Pt(14) if is_comparison else Pt(12)
             r_lbl.font.bold = True
             r_lbl.font.color.rgb = text_white
 
-        # Stage (Col 1 階段 I / R)
+        # Stage (Col 1)
         if has_stage_col:
             c_stage = table.cell(r_ppt, 1); c_stage.vertical_anchor = MSO_ANCHOR.MIDDLE
             _apply_cell_density(c_stage); c_stage.fill.background()
@@ -321,7 +333,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                 p_stage = c_stage.text_frame.paragraphs[0]; p_stage.alignment = PP_ALIGN.CENTER
                 r_stage = p_stage.add_run(); r_stage.text = stage_text
                 r_stage.font.name = config.FONT_PRIMARY
-                r_stage.font.size = Pt(13) # 🚀 Stage 標籤設為 13 Pt
+                r_stage.font.size = Pt(13)
                 r_stage.font.bold = True
                 
                 if stage_text.upper() == "R":
@@ -329,7 +341,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                 else:
                     r_stage.font.color.rgb = text_white
 
-        # Values (Col 2~ 實體數據)
+        # Values (Col 2~)
         for c_i, t in enumerate(teeth):
             cell_col_idx = data_start_col + c_i
             cell_d = table.cell(r_ppt, cell_col_idx); cell_d.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -341,6 +353,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             if col is not None:
                 m_type = meta["type"]
                 r_idx = row_map.get(meta.get("r_key"))
+                stage_text = meta.get("stage", "")
 
                 if m_type in ["pd", "gm", "cal"]:
                     digits = get_three_digit_raw_list(df, r_idx, col)
@@ -351,9 +364,13 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                         display_val = clean_cell(d)
                         run = p_d.add_run(); run.text = f" {display_val} " if len(display_val)>=2 else display_val
                         run.font.name = config.FONT_PRIMARY
-                        run.font.size = Pt(12) if is_comparison else Pt(14) # 🚀 Data 數據提升至 12 Pt
+                        run.font.size = Pt(12) if is_comparison else Pt(14)
+                        
                         if m_type == "pd" and display_val.isdigit() and int(display_val) >= 5:
                             run.font.bold = True; run.font.color.rgb = text_alert
+                            # 🚀 如果是在 R 階段有 PD >= 5，記錄該牙齒
+                            if is_comparison and stage_text.upper() == "R":
+                                teeth_with_high_pd_in_reeval.add(t)
                         else:
                             run.font.bold = False; run.font.color.rgb = text_white
 
@@ -361,7 +378,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     val = clean_cell(df.iloc[r_idx, col]) if r_idx is not None else "0"
                     run = p_d.add_run(); run.text = val if val!="" else "0"
                     run.font.name = config.FONT_PRIMARY
-                    run.font.size = Pt(12) if is_comparison else Pt(14) # 🚀 12 Pt
+                    run.font.size = Pt(12) if is_comparison else Pt(14)
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "furc":
@@ -369,21 +386,24 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     text = parse_tooth_furcation(df, t, col, f_info)
                     run = p_d.add_run(); run.text = text
                     run.font.name = config.FONT_PRIMARY
-                    run.font.size = Pt(12) if is_comparison else Pt(14) # 🚀 12 Pt
+                    run.font.size = Pt(12) if is_comparison else Pt(14)
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "mob":
-                    v = clean_cell(df.iloc[r_idx, col]) if r_idx is not None else ""
-                    val = {"1": "I", "2": "II", "3": "III"}.get(v, "WNL")
+                    # 🚀 修復 Mobility 讀取邏輯 (相容 1, 2, 3 與 羅馬數字 I, II, III)
+                    raw_mob = clean_cell(df.iloc[r_idx, col]).upper() if r_idx is not None else ""
+                    mob_map = {"1": "I", "I": "I", "2": "II", "II": "II", "3": "III", "III": "III"}
+                    val = mob_map.get(raw_mob, "-" if raw_mob in ["0", "", "-"] else raw_mob)
+                    
                     run = p_d.add_run(); run.text = val
                     run.font.name = config.FONT_PRIMARY
-                    run.font.size = Pt(12) if is_comparison else Pt(14) # 🚀 12 Pt
+                    run.font.size = Pt(12) if is_comparison else Pt(14)
                     run.font.bold, run.font.color.rgb = False, text_white
 
                 elif m_type == "prog":
                     run = p_d.add_run(); run.text = "G"
                     run.font.name = config.FONT_PRIMARY
-                    run.font.size = Pt(12) if is_comparison else Pt(14) # 🚀 12 Pt
+                    run.font.size = Pt(12) if is_comparison else Pt(14)
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
     # 5. 缺牙大合併與斜線
@@ -425,7 +445,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                 r_m = p_m.add_run()
                 r_m.text = txt_curr
                 r_m.font.name = config.FONT_PRIMARY
-                r_m.font.size = Pt(14) # 🚀 合併後項目標題 14 Pt
+                r_m.font.size = Pt(14)
                 r_m.font.bold = True
                 r_m.font.color.rgb = text_white
                 
@@ -433,7 +453,33 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             else:
                 r += 1
 
-    # 7. 純白邊框刷新
+    # 🚀 7. 邊框刷新 (若在 R 階段仍有 PD >= 5mm，整欄畫正紅色邊框；否則繪製純白邊框)
+    RED_HEX = "FF0000"
+    WHITE_HEX = "FFFFFF"
+
+    for c_i, t in enumerate(teeth):
+        cell_col = data_start_col + c_i
+        is_high_pd_tooth = (is_comparison and t in teeth_with_high_pd_in_reeval and t not in dynamic_missing)
+
+        left_color = RED_HEX if is_high_pd_tooth else WHITE_HEX
+        right_color = RED_HEX if is_high_pd_tooth else WHITE_HEX
+        border_width = 2.0 if is_high_pd_tooth else 1.0
+
+        for r in range(total_rows):
+            top_color = RED_HEX if (is_high_pd_tooth and r == 0) else WHITE_HEX
+            bottom_color = RED_HEX if (is_high_pd_tooth and r == total_rows - 1) else WHITE_HEX
+
+            _set_cell_border_custom(
+                table.cell(r, cell_col),
+                left_hex=left_color,
+                right_hex=right_color,
+                top_hex=top_color,
+                bottom_hex=bottom_color,
+                width_pt=border_width
+            )
+
+    # 第 0 欄與 Stage 欄維持純白邊框
     for r in range(total_rows):
-        for c in range(total_cols):
-            _set_cell_border_to_white(table.cell(r, c))
+        _set_cell_border_custom(table.cell(r, 0), WHITE_HEX, WHITE_HEX, WHITE_HEX, WHITE_HEX, 1.0)
+        if has_stage_col:
+            _set_cell_border_custom(table.cell(r, 1), WHITE_HEX, WHITE_HEX, WHITE_HEX, WHITE_HEX, 1.0)
