@@ -1,13 +1,5 @@
 # pptx_engine.py
-"""
-簡報生成引擎：
-1. 對比表格 Data 字體一律提升至 12 Pt，標題與表頭 14 Pt，主標題 36 Pt
-2. 純化標題 (例如 Upper Right Sextant)
-3. Stage R 橘黃色顯示，項目欄同名垂直合併 (Vertical Merge)
-4. 專屬 Mobility 跨欄解析（完全相容羅馬數字 I, II, III 與阿拉伯數字 1, 2, 3）
-5. 對比模式下，若牙齒在 Stage R 仍有 PD >= 5mm，整欄繪製高質感正紅色高亮邊框
-6. Initial 表格自動合併 Recession 上下兩列的標題 Cell (Col 0)
-"""
+
 from io import BytesIO
 from typing import Dict, Set, Any, List
 import pandas as pd
@@ -316,7 +308,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     f_rows = find_furcation_rows(df)
     dynamic_missing = set(missing_teeth)
 
-    # 用於記錄各顆牙齒在 Re-eval 階段是否有 PD >= 5
+    # 🚀 用於記錄各顆牙齒在 Re-eval 階段是否有任何位點 PD >= 5
     teeth_with_high_pd_in_reeval = set()
 
     # 4. 資料列填寫
@@ -377,8 +369,10 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                         run.font.name = config.FONT_PRIMARY
                         run.font.size = Pt(12) if is_comparison else Pt(14)
                         
+                        # 🚀 只要是 Probing Depth 且數字 >= 5
                         if m_type == "pd" and display_val.isdigit() and int(display_val) >= 5:
                             run.font.bold = True; run.font.color.rgb = text_alert
+                            # 🚀 如果是在對比表格且屬於 Stage R（包含 B 側 / P 側 / L 側），記錄該牙齒
                             if is_comparison and stage_text.upper() == "R":
                                 teeth_with_high_pd_in_reeval.add(t)
                         else:
@@ -412,7 +406,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                     run.font.size = Pt(12) if is_comparison else Pt(14)
                     run.font.bold, run.font.color.rgb = False, _rgb((0, 255, 0))
 
-    # 5. 缺牙大合併 (已移除跨列斜線)
+    # 5. 缺牙大合併
     for c_i, t in enumerate(teeth):
         if t in dynamic_missing:
             cell_col_idx = data_start_col + c_i
@@ -431,7 +425,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
     # 6. 自動合併標題列
     if not is_comparison:
-        # 🚀 在 Initial 表格下，將 Recession 上下兩列（Row 3 與 Row 4）的 Col 0 進行垂直合併
+        # Initial 表格：將 Recession 上下兩列（Row 3 與 Row 4）的 Col 0 進行垂直合併
         c_rec1 = table.cell(3, 0)
         c_rec2 = table.cell(4, 0)
         c_rec1.merge(c_rec2)
@@ -482,7 +476,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
             else:
                 r += 1
 
-    # 7. 邊框刷新 (若在 R 階段仍有 PD >= 5mm，整欄畫正紅色邊框；否則繪製純白邊框)
+    # 🚀 7. 邊框刷新（高質感紅色外框線繪製機制）
     RED_HEX = "FF0000"
     WHITE_HEX = "FFFFFF"
 
@@ -492,8 +486,9 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
 
         left_color = RED_HEX if is_high_pd_tooth else WHITE_HEX
         right_color = RED_HEX if is_high_pd_tooth else WHITE_HEX
-        border_width = 2.0 if is_high_pd_tooth else 1.0
+        border_width = 2.5 if is_high_pd_tooth else 1.0
 
+        # 為當前牙齒欄位的每個 cell 設定邊框
         for r in range(total_rows):
             top_color = RED_HEX if (is_high_pd_tooth and r == 0) else WHITE_HEX
             bottom_color = RED_HEX if (is_high_pd_tooth and r == total_rows - 1) else WHITE_HEX
@@ -506,6 +501,18 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                 bottom_hex=bottom_color,
                 width_pt=border_width
             )
+
+        # 🚀 防止相鄰左欄的右邊框覆蓋當前欄位的紅邊
+        if is_high_pd_tooth and cell_col > 0:
+            for r in range(total_rows):
+                _set_cell_border_custom(
+                    table.cell(r, cell_col - 1),
+                    left_hex=WHITE_HEX if cell_col - 1 == 0 else WHITE_HEX,
+                    right_hex=RED_HEX,
+                    top_hex=WHITE_HEX,
+                    bottom_hex=WHITE_HEX,
+                    width_pt=border_width
+                )
 
     # 第 0 欄與 Stage 欄維持純白邊框
     for r in range(total_rows):
