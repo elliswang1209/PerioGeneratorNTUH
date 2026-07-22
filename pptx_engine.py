@@ -234,14 +234,14 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
     if not is_comparison:
         col_width_label = Inches(1.8)
         col_width_stage = Inches(0)
-        col_width_data  = Inches(1.2)
+        col_width_data  = Inches(0.8)
         top_pos = Inches(1.3)
         row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
         col_width_label = Inches(1.8)
         col_width_stage = Inches(0.5)
         col_width_data  = Inches(0.8)
-        top_pos = Inches(0.5)
+        top_pos = Inches(0.25)
         bottom_margin = Inches(0.15)
         available_h = Inches(slide_h) - top_pos - bottom_margin
         row_height = available_h / total_rows
