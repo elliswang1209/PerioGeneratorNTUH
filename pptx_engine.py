@@ -75,13 +75,11 @@ def parse_tooth_mobility(df, r_idx, col) -> str:
             val = clean_cell(df.iloc[int(r_idx), c]).upper()
             if val in mob_map:
                 return mob_map[val]
-            elif val in ["WNL", "0"]:
+            elif val in ["WNL", "0", "-"]:
                 return "WNL"
-            elif val == "-":
-                return "-"
             elif val:
                 return val
-    return "-"
+    return "WNL"
 
 def _rgb(color_tuple):
     return RGBColor(*color_tuple)
