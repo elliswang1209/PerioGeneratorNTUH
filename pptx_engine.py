@@ -201,7 +201,7 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
         top_pos = Inches(0.85)  # 標題下方開始
         bottom_margin = Inches(0.15) # 底部預留邊界
         available_h = Inches(slide_h) - top_pos - bottom_margin
-        row_height = available_h / total_rows # 均分使垂直貼齊上下
+        row_height = int(available_h / total_rows) # 均分使垂直貼齊上下
 
     total_table_width = col_width_label + col_width_stage + (col_width_data * len(teeth))
     total_table_height = row_height * total_rows
@@ -222,10 +222,10 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
         data_start_col = 1
 
     for c in range(data_start_col, total_cols): 
-        table.columns[c].width = col_width_data
+        table.columns[c].width = int(col_width_data)
         
     for r in range(total_rows): 
-        table.rows[r].height = row_height
+        table.rows[r].height = int(row_height)
 
     text_white, text_alert = _rgb(config.COLOR_TEXT_WHITE), _rgb(config.COLOR_TEXT_ALERT)
 
