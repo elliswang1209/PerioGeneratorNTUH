@@ -36,9 +36,9 @@ SEXTANTS = {
     "Upper Right Sextant": [18, 17, 16, 15, 14],
     "Upper Anterior Sextant": [13, 12, 11, 21, 22, 23],
     "Upper Left Sextant": [24, 25, 26, 27, 28],
-    "Lower Left Sextant": [38, 37, 36, 35, 34],
+    "Lower Left Sextant": [34, 35, 36, 37, 38],
     "Lower Anterior Sextant": [43, 42, 41, 31, 32, 33],
-    "Lower Right Sextant": [44, 45, 46, 47, 48],
+    "Lower Right Sextant": [48, 47, 46, 45, 44],
 }
 
 # 臨床警示閾值
