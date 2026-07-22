@@ -111,7 +111,7 @@ def create_six_sextants_presentation(df, missing_teeth: Set[int]) -> BytesIO:
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name} - Initial Charting", teeth, df, missing_teeth, is_comparison=False)
+        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=False)
 
     stream = BytesIO()
     prs.save(stream)
@@ -126,11 +126,11 @@ def create_comparison_presentation(df, missing_teeth: Set[int]) -> BytesIO:
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name} - Initial Stage", teeth, df, missing_teeth, is_comparison=False)
+        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=False)
 
     for sextant_name, teeth in config.SEXTANTS.items():
         slide = prs.slides.add_slide(blank_layout)
-        _draw_sextant_slide(slide, f"{sextant_name} - Initial vs Re-evaluation", teeth, df, missing_teeth, is_comparison=True)
+        _draw_sextant_slide(slide, f"{sextant_name}", teeth, df, missing_teeth, is_comparison=True)
 
     stream = BytesIO()
     prs.save(stream)
@@ -229,10 +229,10 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
         top_pos = Inches(1.3)
         row_height = Inches(config.TABLE_ROW_HEIGHT)
     else:
-        col_width_label = Inches(1.9)   # 第 1 欄：項目名稱寬度
+        col_width_label = Inches(1.5)   # 第 1 欄：項目名稱寬度
         col_width_stage = Inches(0.5)   # 第 2 欄：I / R 寬度
         col_width_data  = Inches(0.8)  # 第 3 欄起：數據欄寬度
-        top_pos = Inches(0.85)
+        top_pos = Inches(0.05)
         bottom_margin = Inches(0.15)
         available_h = Inches(slide_h) - top_pos - bottom_margin
         row_height = available_h / total_rows
