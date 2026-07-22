@@ -1,6 +1,7 @@
 # core_parser.py
 """
 核心解析引擎：100% 完整保留台大牙周專科病歷格式生成演算法，確保數據鏡射與過濾精準。
+支援 Initial 與 Initial & Re-evaluation 雙期分側定位。
 """
 import pandas as pd
 import io
@@ -10,7 +11,6 @@ def clean_cell(x):
     if pd.isna(x):
         return ""
     val_str = str(x).strip()
-    # 🚀 自動去除 .0 浮點數尾數 (例如 2.0 -> 2, 1.0 -> 1)
     if val_str.endswith('.0'):
         val_str = val_str[:-2]
     return val_str
@@ -22,6 +22,7 @@ def is_valid_tooth(x):
     return (tooth // 10) in [1, 2, 3, 4] and 1 <= (tooth % 10) <= 8
 
 def is_comparison_file(df) -> bool:
+    """自動判斷上傳的檔案是否為 Initial & Re-evaluation 雙期對比檔"""
     full_text = df.astype(str).to_string()
     return ("Date(Re-evaluation)" in full_text) or ("Re=" in full_text) or ("I" in df.values and "R" in df.values)
 
@@ -71,43 +72,65 @@ def get_missing_teeth_set(df, tooth_rows, missing_rows):
         if t // 10 in [3, 4] and lo_m is not None and c + 1 < df.shape[1] and clean_cell(df.iloc[lo_m, c + 1]).upper() == "TRUE": missing_teeth.add(t)
     return missing_teeth
 
-def collect_absolute_row_indices(df, target_stage="I"):
-    """智慧型列號收集器：極致相容 Initial (I) 與 Re-evaluation (R)"""
+def collect_comparison_row_indices(df):
+    """智慧型分區列號收集器：專門解決 Upper/Lower Arch 的 Buccal/Palatal/Lingual 列對應"""
     is_comp = is_comparison_file(df)
-    pd_rows, gm_rows, mob_rows, km_rows = [], [], [], []
 
-    for i in range(len(df)):
-        c0 = clean_cell(df.iloc[i, 0]).upper()
-        c1 = clean_cell(df.iloc[i, 1]).upper()
+    # 尋找下顎開始的分割線行數
+    midpoint = len(df) // 2
+    for r in range(len(df)):
+        row_str = " ".join([str(df.iloc[r, c]) for c in range(df.shape[1]) if pd.notna(df.iloc[r, c])])
+        if "48" in row_str and "38" in row_str:
+            midpoint = r
+            break
+
+    res = {}
+
+    # 1. 上顎 (Upper Arch: 0 ~ midpoint)
+    for r in range(0, midpoint):
+        c0 = clean_cell(df.iloc[r, 0]).upper()
+        c1 = clean_cell(df.iloc[r, 1]).upper()
         prefix = f"{c0} {c1}"
 
-        if "PD" in prefix:
-            r_idx = i if (not is_comp or target_stage == "I") else i + 1
-            pd_rows.append(r_idx)
-        elif "GM" in prefix or "CEJ" in prefix:
-            r_idx = i if (not is_comp or target_stage == "I") else i + 1
-            gm_rows.append(r_idx)
-        elif "MOBILITY" in prefix and "SCALE" not in prefix:
-            r_idx = i if (not is_comp or target_stage == "I") else i + 1
-            mob_rows.append(r_idx)
-        elif "KM" in prefix:
-            r_idx = i if (not is_comp or target_stage == "I") else i + 1
-            km_rows.append(r_idx)
+        if "PD" in prefix and "up_b_pd_i" not in res:
+            res["up_b_pd_i"] = r; res["up_b_pd_r"] = r + 1 if is_comp else r
+        elif "PD" in prefix and "up_b_pd_i" in res and "up_p_pd_i" not in res:
+            res["up_p_pd_i"] = r; res["up_p_pd_r"] = r + 1 if is_comp else r
 
-    return {
-        "up_b_pd": pd_rows[0] if len(pd_rows) >= 1 else None, 
-        "up_p_pd": pd_rows[1] if len(pd_rows) >= 2 else None,
-        "lo_l_pd": pd_rows[2] if len(pd_rows) >= 3 else None, 
-        "lo_b_pd": pd_rows[3] if len(pd_rows) >= 4 else None,
-        "up_b_gm": gm_rows[0] if len(gm_rows) >= 1 else None, 
-        "up_p_gm": gm_rows[1] if len(gm_rows) >= 2 else None,
-        "lo_l_gm": gm_rows[2] if len(gm_rows) >= 3 else None, 
-        "lo_b_gm": gm_rows[3] if len(gm_rows) >= 4 else None,
-        "up_mob": mob_rows[0] if len(mob_rows) >= 1 else None, 
-        "lo_mob": mob_rows[-1] if len(mob_rows) >= 1 else None,
-        "up_km":  km_rows[0] if len(km_rows) >= 1 else None, 
-        "lo_km":  km_rows[-1] if len(km_rows) >= 1 else None
-    }
+        if ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "up_b_gm_i" not in res:
+            res["up_b_gm_i"] = r; res["up_b_gm_r"] = r + 1 if is_comp else r
+        elif ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "up_b_gm_i" in res and "up_p_gm_i" not in res:
+            res["up_p_gm_i"] = r; res["up_p_gm_r"] = r + 1 if is_comp else r
+
+        if "KM" in prefix and "up_km_i" not in res:
+            res["up_km_i"] = r; res["up_km_r"] = r + 1 if is_comp else r
+
+        if "MOBILITY" in prefix and "SCALE" not in prefix and "up_mob_i" not in res:
+            res["up_mob_i"] = r; res["up_mob_r"] = r + 1 if is_comp else r
+
+    # 2. 下顎 (Lower Arch: midpoint ~ len(df))
+    for r in range(midpoint, len(df)):
+        c0 = clean_cell(df.iloc[r, 0]).upper()
+        c1 = clean_cell(df.iloc[r, 1]).upper()
+        prefix = f"{c0} {c1}"
+
+        if "PD" in prefix and "lo_l_pd_i" not in res:
+            res["lo_l_pd_i"] = r; res["lo_l_pd_r"] = r + 1 if is_comp else r
+        elif "PD" in prefix and "lo_l_pd_i" in res and "lo_b_pd_i" not in res:
+            res["lo_b_pd_i"] = r; res["lo_b_pd_r"] = r + 1 if is_comp else r
+
+        if ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "lo_l_gm_i" not in res:
+            res["lo_l_gm_i"] = r; res["lo_l_gm_r"] = r + 1 if is_comp else r
+        elif ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "lo_l_gm_i" in res and "lo_b_gm_i" not in res:
+            res["lo_b_gm_i"] = r; res["lo_b_gm_r"] = r + 1 if is_comp else r
+
+        if "KM" in prefix and "lo_km_i" not in res:
+            res["lo_km_i"] = r; res["lo_km_r"] = r + 1 if is_comp else r
+
+        if "MOBILITY" in prefix and "SCALE" not in prefix and "lo_mob_i" not in res:
+            res["lo_mob_i"] = r; res["lo_mob_r"] = r + 1 if is_comp else r
+
+    return res
 
 def parse_periodontal_csv(file_stream) -> Tuple[Any, Set[int], bool, Dict[str, Any]]:
     try:
