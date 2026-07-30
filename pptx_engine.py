@@ -226,24 +226,25 @@ def _draw_sextant_slide(slide, title_text: str, teeth: List[int], df, missing_te
                
             ]
         else:
+         
             active_row_metas = [
-                {"label": "Mobility", "stage": "I", "r_key": "up_mob_i", "type": "mob"},
-                {"label": "Mobility", "stage": "R", "r_key": "up_mob_r", "type": "mob"},
-                {"label": "Masticatory Mucosa", "stage": "I", "r_key": "up_km_i", "type": "km"},
-                {"label": "Masticatory Mucosa", "stage": "R", "r_key": "up_km_r", "type": "km"},
-                {"label": "Recession (L)", "stage": "I", "r_key": "up_b_gm_i", "type": "gm"},
-                {"label": "Recession (L)", "stage": "R", "r_key": "up_b_gm_r", "type": "gm"},
-                {"label": "Probing Depth (L)", "stage": "I", "r_key": "up_b_pd_i", "type": "pd"},
-                {"label": "Probing Depth (L)", "stage": "R", "r_key": "up_b_pd_r", "type": "pd"},
-                {"label": "CAL (L)", "stage": "I", "r_key": "up_b_cal_i", "type": "cal"},
-                {"label": "CAL (L)", "stage": "R", "r_key": "up_b_cal_r", "type": "cal"},
+                {"label": "Mobility", "stage": "I", "r_key": "lo_mob_i", "type": "mob"},
+                {"label": "Mobility", "stage": "R", "r_key": "lo_mob_r", "type": "mob"},
+                {"label": "Masticatory Mucosa", "stage": "I", "r_key": "lo_km_i", "type": "km"},
+                {"label": "Masticatory Mucosa", "stage": "R", "r_key": "lo_km_r", "type": "km"},
+                {"label": "Recession (L)", "stage": "I", "r_key": "lo_l_gm_i", "type": "gm"},    
+                {"label": "Recession (L)", "stage": "R", "r_key": "lo_l_gm_r", "type": "gm"},
+                {"label": "Probing Depth (L)", "stage": "I", "r_key": "lo_l_pd_i", "type": "pd"}, 
+                {"label": "Probing Depth (L)", "stage": "R", "r_key": "lo_l_pd_r", "type": "pd"},
+                {"label": "CAL (L)", "stage": "I", "r_key": "lo_l_cal_i", "type": "cal"},  
+                {"label": "CAL (L)", "stage": "R", "r_key": "lo_l_cal_r", "type": "cal"},
                 {"label": "Furcation Involvement", "stage": "", "type": "furc"},
-                {"label": "CAL (B)", "stage": "I", "r_key": "up_p_cal_i", "type": "cal"},
-                {"label": "CAL (B)", "stage": "R", "r_key": "up_p_cal_r", "type": "cal"},
-                {"label": "Probing Depth (B)", "stage": "I", "r_key": "up_p_pd_i", "type": "pd"},
-                {"label": "Probing Depth (B)", "stage": "R", "r_key": "up_p_pd_r", "type": "pd"},
-                {"label": "Recession (B)", "stage": "I", "r_key": "up_p_gm_i", "type": "gm"},
-                {"label": "Recession (B)", "stage": "R", "r_key": "up_p_gm_r", "type": "gm"},
+                {"label": "CAL (B)", "stage": "I", "r_key": "lo_b_cal_i", "type": "cal"},         
+                {"label": "CAL (B)", "stage": "R", "r_key": "lo_b_cal_r", "type": "cal"},
+                {"label": "Probing Depth (B)", "stage": "I", "r_key": "lo_b_pd_i", "type": "pd"},
+                {"label": "Probing Depth (B)", "stage": "R", "r_key": "lo_b_pd_r", "type": "pd"},
+                {"label": "Recession (B)", "stage": "I", "r_key": "lo_b_gm_i", "type": "gm"},    
+                {"label": "Recession (B)", "stage": "R", "r_key": "lo_b_gm_r", "type": "gm"},
             ]
 
     total_rows = 1 + len(active_row_metas)
