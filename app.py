@@ -3,11 +3,24 @@ Streamlit 主應用程式入口與模組路由 (Page Router)
 """
 import os
 import re
+import io
 import streamlit as st
 import pandas as pd
+from contextlib import redirect_stdout
 
 import config
-from core_parser import find_missing_teeth, is_comparison_file
+from core_parser import (
+    find_missing_teeth, 
+    is_comparison_file,
+    find_tooth_rows,
+    find_missing_rows,
+    get_missing_teeth_set,
+    parse_periodontal_pd,
+    generate_present_dentition,
+    get_flagged_teeth_string,
+    print_mobility_summary,
+    print_furcation_summary
+)
 from pptx_engine import create_six_sextants_presentation, create_comparison_presentation
 
 # 🚀 匯入獨立的 12 口內照處理模組
@@ -25,19 +38,9 @@ st.set_page_config(
 def format_download_filename(original_filename: str, is_comparison: bool) -> str:
     """
     解析上傳 CSV 的原始檔名，自動轉化為標準簡報檔名格式。
-    範例：
-    - 陳雅秋_6707208 - Initial(輸入).csv -> 陳雅秋6707208_I.pptx
-    - 劉頂立_8066684 - Re-evaluation(輸入).csv -> 劉頂立8066684_Re.pptx
-    - 蔡怡文_7214894 - Initial&Re-evaluation(輸出).csv -> 蔡怡文7214894_I&Re.pptx
     """
-    # 1. 移除副檔名 .csv
     base_name = os.path.splitext(original_filename)[0]
-    
-    # 2. 清理檔名尾端的 (輸入)、(輸出) 等括弧註記
     clean_name = re.sub(r'\([^\)]*\)', '', base_name).strip()
-    
-    # 3. 使用正則表達式提取「姓名」與「病歷號數字」
-    # 匹配模式：非數字姓名 + 分隔符(底線或空格) + 純數字病歷號
     match = re.search(r'([^\d_\s]+)[_\s]*(\d+)', clean_name)
     
     if match:
@@ -47,7 +50,6 @@ def format_download_filename(original_filename: str, is_comparison: bool) -> str
     else:
         patient_info = "Peri_Report"
 
-    # 4. 判斷階段標籤 (I&Re / Re / I)
     clean_name_lower = clean_name.lower()
     
     if is_comparison or "initial&re-evaluation" in clean_name_lower or "initial & re-evaluation" in clean_name_lower:
@@ -60,6 +62,54 @@ def format_download_filename(original_filename: str, is_comparison: bool) -> str
         suffix = "Report"
 
     return f"{patient_info}_{suffix}.pptx"
+
+# ============================================================
+# 輔助函式：生成 Objective 病歷文字
+# ============================================================
+def generate_objective_text(df_raw: pd.DataFrame) -> str:
+    """
+    解析 CSV 原始資料，編織生成標準的 Objective 病歷紀錄文字。
+    """
+    tooth_rows_idx = find_tooth_rows(df_raw)
+    missing_rows_idx = find_missing_rows(df_raw)
+    missing_teeth = get_missing_teeth_set(df_raw, tooth_rows_idx, missing_rows_idx)
+    records = parse_periodontal_pd(df_raw, missing_teeth)
+
+    ordered_groups = [
+        [18, 17, 16, 15, 14, 13, 12, 11],
+        [21, 22, 23, 24, 25, 26, 27, 28],
+        [38, 37, 36, 35, 34, 33, 32, 31],
+        [41, 42, 43, 44, 45, 46, 47, 48],
+    ]
+
+    output_buffer = io.StringIO()
+    with redirect_stdout(output_buffer):
+        # 1. Present dentition
+        print(generate_present_dentition(df_raw, tooth_rows_idx, missing_teeth))
+        print("")
+        
+        # 2. Oral hygiene
+        print(" 2. Oral hygiene: ______; generalized gingival inflammation with plaque and calculus deposition.")
+        print("")
+        
+        # 3. Probing depth summary
+        pd_report_str = get_flagged_teeth_string(records, ordered_groups, gap=6)
+        print(pd_report_str.rstrip())
+        print("")
+        
+        # 4. Mobility summary
+        try:
+            print_mobility_summary(df_raw, missing_teeth)
+        except Exception:
+            print(" 4. Mobility: nil")
+        
+        # 5. Furcation summary
+        try:
+            print_furcation_summary(df_raw, missing_teeth)
+        except Exception:
+            print("\n 5. Furcation: nil")
+
+    return output_buffer.getvalue()
 
 # ============================================================
 # 頂部大標題區塊
@@ -101,12 +151,16 @@ def render_periodontal_generator_page():
 
     if uploaded_file is not None:
         try:
-            df = pd.read_csv(uploaded_file, header=None)
+            # 讀取 CSV (強制字串讀取，避免數字型別誤判)
+            df = pd.read_csv(uploaded_file, header=None, dtype=str).fillna("")
             
             missing_teeth = find_missing_teeth(df)
             is_comparison = is_comparison_file(df)
             output_filename = format_download_filename(uploaded_file.name, is_comparison)
 
+            # ----------------------------------------------------
+            # 1. 簡報生成與下載區塊
+            # ----------------------------------------------------
             if is_comparison:
                 st.success("生成 Initial & Re-evaluation 簡報，請稍候")
                 ppt_comparison = create_comparison_presentation(df, missing_teeth)
@@ -116,27 +170,38 @@ def render_periodontal_generator_page():
                     file_name=output_filename,
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
-                st.write("---")
-                st.write("")
             else:
-                # 🚀 動態判斷是 Initial 還是 Re-evaluation
                 file_name_lower = uploaded_file.name.lower()
                 if "re-evaluation" in file_name_lower or "re" in file_name_lower:
                     stage_name = "Re-evaluation"
                 else:
                     stage_name = "Initial"
 
-                st.info(f"生成 {stage_name} 簡報，請稍候")
+                st.success(f"生成 {stage_name} 簡報，請稍候")
                 ppt_initial = create_six_sextants_presentation(df, missing_teeth)
                 st.download_button(
-                    label=f"📥 下載簡報",
+                    label="📥 下載簡報",
                     data=ppt_initial,
                     file_name=output_filename,
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
-                st.write("---")
-                st.write("")
 
+            st.write("---")
+
+            # ----------------------------------------------------
+            # 2. Objective 病歷紀錄文字區塊 (位在簡報下載與免責聲明之間)
+            # ----------------------------------------------------
+            with st.container(border=True):
+                st.subheader("📋 Objective 病歷紀錄文字")
+                
+                # 自動生成文字內容
+                objective_text = generate_objective_text(df)
+                
+                # 提示與可直接複製的程式碼框
+                st.caption("點擊下方右上角按鈕即可快速複製文字貼至電子病歷：")
+                st.code(objective_text, language="text")
+
+            st.write("---")
 
         except Exception as e:
             st.error(f"解析檔案時發生錯誤：{str(e)}")
@@ -150,8 +215,9 @@ def main():
 
     if page_choice == "牙周簡報生成 (PPT)":
         render_periodontal_generator_page()
+        
         # ============================================================
-        # 區塊 1：隱私保護與使用免責聲明 
+        # 區塊：隱私保護與使用免責聲明 
         # ============================================================
         with st.expander("⚖️ 隱私保護與免責聲明", expanded=False):
             st.markdown("""
@@ -170,6 +236,7 @@ def main():
                     </ul>
                 </div>
             """, unsafe_allow_html=True)
+
     elif page_choice == "12 口內照上傳展示 (Photos)":
         render_intraoral_photo_page()
       
