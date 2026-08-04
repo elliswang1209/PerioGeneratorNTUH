@@ -2,6 +2,7 @@
 Streamlit 主應用程式入口與模組路由 (Page Router)
 """
 import os
+import re
 import streamlit as st
 import pandas as pd
 
@@ -17,6 +18,48 @@ st.set_page_config(
     page_icon="🦷",
     layout="wide"
 )
+
+# ============================================================
+# 輔助函式：動態轉換下載檔名
+# ============================================================
+def format_download_filename(original_filename: str, is_comparison: bool) -> str:
+    """
+    解析上傳 CSV 的原始檔名，自動轉化為標準簡報檔名格式。
+    範例：
+    - 陳雅秋_6707208 - Initial(輸入).csv -> 陳雅秋6707208_I.pptx
+    - 劉頂立_8066684 - Re-evaluation(輸入).csv -> 劉頂立8066684_Re.pptx
+    - 蔡怡文_7214894 - Initial&Re-evaluation(輸出).csv -> 蔡怡文7214894_I&Re.pptx
+    """
+    # 1. 移除副檔名 .csv
+    base_name = os.path.splitext(original_filename)[0]
+    
+    # 2. 清理檔名尾端的 (輸入)、(輸出) 等括弧註記
+    clean_name = re.sub(r'\([^\)]*\)', '', base_name).strip()
+    
+    # 3. 使用正則表達式提取「姓名」與「病歷號數字」
+    # 匹配模式：非數字姓名 + 分隔符(底線或空格) + 純數字病歷號
+    match = re.search(r'([^\d_\s]+)[_\s]*(\d+)', clean_name)
+    
+    if match:
+        name = match.group(1).strip()
+        patient_id = match.group(2).strip()
+        patient_info = f"{name}{patient_id}"
+    else:
+        patient_info = "Peri_Report"
+
+    # 4. 判斷階段標籤 (I&Re / Re / I)
+    clean_name_lower = clean_name.lower()
+    
+    if is_comparison or "initial&re-evaluation" in clean_name_lower or "initial & re-evaluation" in clean_name_lower:
+        suffix = "I&Re"
+    elif "re-evaluation" in clean_name_lower or "re" in clean_name_lower:
+        suffix = "Re"
+    elif "initial" in clean_name_lower:
+        suffix = "I"
+    else:
+        suffix = "Report"
+
+    return f"{patient_info}_{suffix}.pptx"
 
 # ============================================================
 # 頂部大標題區塊
@@ -54,9 +97,7 @@ st.write("---")
 st.write("")
 
 def render_periodontal_generator_page():
-   
-    
-    uploaded_file = st.file_uploader("請選擇 Periogrid 輸出的 CSV 檔案", type=["csv"])
+    uploaded_file = st.file_uploader("請上傳要轉換的 CSV 檔案", type=["csv"])
 
     if uploaded_file is not None:
         try:
@@ -66,31 +107,33 @@ def render_periodontal_generator_page():
             missing_teeth = find_missing_teeth(df)
             is_comparison = is_comparison_file(df)
 
+            # 🚀 自動解析檔名
+            output_filename = format_download_filename(uploaded_file.name, is_comparison)
+
             st.markdown("### 生成簡報下載")
             if is_comparison:
                 st.info("此 CSV 包含 Initial & Re-evaluation")
                 ppt_comparison = create_comparison_presentation(df, missing_teeth)
                 st.download_button(
-                    label="📥 下載 Initial & Re-evaluation 對比簡報",
+                    label=f"📥 下載對比簡報 ({output_filename})",
                     data=ppt_comparison,
-                    file_name="Peri_CC_Report.pptx",
+                    file_name=output_filename,
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
-                # 增加一點垂直間距
                 st.write("---")
                 st.write("")
             else:
-                st.info("此 CSV 為 Initial or Re-evaluation")
+                st.info("此 CSV 為單一階段資料")
                 ppt_initial = create_six_sextants_presentation(df, missing_teeth)
                 st.download_button(
-                    label="📥 下載 Initial 簡報",
+                    label=f"📥 下載單階段簡報 ({output_filename})",
                     data=ppt_initial,
-                    file_name="Peri_initial_Report.pptx",
+                    file_name=output_filename,
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
-                # 增加一點垂直間距
                 st.write("---")
                 st.write("")
+
             # ============================================================
             # 區塊 1：隱私保護與使用免責聲明 
             # ============================================================
@@ -111,8 +154,6 @@ def render_periodontal_generator_page():
                         </ul>
                     </div>
                 """, unsafe_allow_html=True)
-                
-                
 
         except Exception as e:
             st.error(f"解析檔案時發生錯誤：{str(e)}")
@@ -128,6 +169,6 @@ def main():
         render_periodontal_generator_page()
     elif page_choice == "12 口內照上傳展示 (Photos)":
         render_intraoral_photo_page()
-     
+      
 if __name__ == "__main__":
     main()
