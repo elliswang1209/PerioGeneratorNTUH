@@ -23,30 +23,34 @@ st.set_page_config(
 # ============================================================
 st.title("🦷 PerioGenerator")
 st.markdown('<div style="text-align: right;"><b>【 Established by B09 王冠中 】</b></div>', unsafe_allow_html=True)
+
+# 步驟 1 與 步驟 2
 st.markdown("1. 去你要下載的 Charting Google sheet")
 st.markdown("2. 選擇對的工作簿（Initial or Initial & Re-evaluation)")
-col1, col2 = st.columns([3, 4])  # 左邊佔 3/7，右邊佔 4/7
-with col1:
-    image_path = "Labels.png"
-    if os.path.exists(image_path):
-        st.image(image_path, use_container_width=True)
-    else:
-        st.warning(f"⚠️ 找不到說明圖片：{image_path}")
+
+# 🚀 橫跨整頁顯示 Labels.png
+image_path_labels = "Labels.png"
+if os.path.exists(image_path_labels):
+    st.image(image_path_labels, use_container_width=True)
+else:
+    st.warning(f"⚠️ 找不到說明圖片：{image_path_labels}")
+
+# 步驟 3 至 步驟 6
 st.markdown("3. 點擊左上方「檔案」")
 st.markdown("4. 點擊「下載」")
 st.markdown("5. 下載「逗號分隔值檔案（.csv）」")
 st.markdown("6. 去電腦的下載項目資料夾，找到要上傳的檔案！")
 
+# 下方 Download.png 保持側邊或依需求調整 (此處維持原本的兩欄式排版)
 col1, col2 = st.columns([3, 4])  # 左邊佔 3/7，右邊佔 4/7
 with col1:
-    image_path = "Download.png"
-    if os.path.exists(image_path):
-        st.image(image_path, use_container_width=True)
+    image_path_download = "Download.png"
+    if os.path.exists(image_path_download):
+        st.image(image_path_download, use_container_width=True)
     else:
-        st.warning(f"⚠️ 找不到說明圖片：{image_path}")
+        st.warning(f"⚠️ 找不到說明圖片：{image_path_download}")
 
-st.write("")  
-
+st.write("")
 # ============================================================
 # 區塊 1：隱私保護與使用免責聲明 
 # ============================================================
