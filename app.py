@@ -177,7 +177,7 @@ def render_periodontal_generator_page():
                 else:
                     stage_name = "Initial"
 
-                st.success(f"生成 {stage_name} 簡報，請稍候")
+                st.info(f"生成 {stage_name} 簡報，請稍候")
                 ppt_initial = create_six_sextants_presentation(df, missing_teeth)
                 st.download_button(
                     label="📥 下載簡報",
