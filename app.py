@@ -76,6 +76,9 @@ def render_periodontal_generator_page():
                     file_name="Peri_CC_Report.pptx",
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
+                # 增加一點垂直間距
+                st.write("---")
+                st.write("")
             else:
                 st.info("此 CSV 為 Initial or Re-evaluation")
                 ppt_initial = create_six_sextants_presentation(df, missing_teeth)
@@ -85,6 +88,9 @@ def render_periodontal_generator_page():
                     file_name="Peri_initial_Report.pptx",
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
+                # 增加一點垂直間距
+                st.write("---")
+                st.write("")
             # ============================================================
             # 區塊 1：隱私保護與使用免責聲明 
             # ============================================================
@@ -106,9 +112,6 @@ def render_periodontal_generator_page():
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # 增加一點垂直間距
-                st.write("---")
-                st.write("")
                 
 
         except Exception as e:
