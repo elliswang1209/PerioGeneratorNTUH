@@ -114,7 +114,7 @@ def generate_objective_text(df_raw: pd.DataFrame) -> str:
 # ============================================================
 # 頂部大標題區塊
 # ============================================================
-st.title("🦷 PerioGenerator")
+st.title("🦷 PerioGeneratorPro")
 st.markdown('<div style="text-align: right;"><b>【 Established by B09 王冠中 】</b></div>', unsafe_allow_html=True)
 
 # 步驟 1 與 步驟 2
