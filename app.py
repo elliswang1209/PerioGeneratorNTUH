@@ -102,15 +102,11 @@ def render_periodontal_generator_page():
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file, header=None)
-            st.success("CSV 檔案讀取成功！")
             
             missing_teeth = find_missing_teeth(df)
             is_comparison = is_comparison_file(df)
-
-            # 🚀 自動解析檔名
             output_filename = format_download_filename(uploaded_file.name, is_comparison)
 
-            st.markdown("### 生成簡報下載")
             if is_comparison:
                 st.info("生成 Initial & Re-evaluation 簡報")
                 ppt_comparison = create_comparison_presentation(df, missing_teeth)
