@@ -1,10 +1,10 @@
-# core_parser.py
 """
 核心解析引擎：100% 完整保留台大牙周專科病歷格式生成演算法，確保數據鏡射與過濾精準。
 支援 Initial 與 Initial & Re-evaluation 雙期分側定位，修正 CAL 被 MOBILITY SCALE 誤抓的問題。
 """
 import pandas as pd
 import io
+import re
 from typing import Dict, List, Set, Any, Tuple
 
 def clean_cell(x): 
@@ -174,3 +174,143 @@ def parse_periodontal_csv(file_stream) -> Tuple[Any, Set[int], bool, Dict[str, A
     missing_teeth = get_missing_teeth_set(df, tooth_rows, missing_rows)
 
     return df, missing_teeth, is_comp, patient_info
+
+# ============================================================
+# 🚀 補全 app.py 介面相容函式 (Objective 病歷文字編織)
+# ============================================================
+
+def collect_absolute_row_indices(df: pd.DataFrame) -> dict:
+    """相容性函式：提供 app.py 與 pptx_engine 解鎖特定資料行號"""
+    return collect_comparison_row_indices(df)
+
+def extract_implant_teeth(df: pd.DataFrame) -> set:
+    """提取植牙牙號集合"""
+    implant_teeth = set()
+    for r in range(len(df)):
+        row_str = " ".join([clean_cell(df.iloc[r, c]).upper() for c in range(df.shape[1])])
+        if "IMPLANT" in row_str:
+            tooth_rows = find_tooth_rows(df)
+            if tooth_rows:
+                start_cols = get_tooth_start_columns(df, tooth_rows[0])
+                for t, c in start_cols.items():
+                    val = clean_cell(df.iloc[r, c + 1]).upper() if c + 1 < df.shape[1] else ""
+                    if val == "TRUE" or "IMPLANT" in val:
+                        implant_teeth.add(t)
+    return implant_teeth
+
+def parse_periodontal_pd(df: pd.DataFrame, missing_teeth: set) -> dict:
+    """解析 11~48 牙齒之 Probing Depth (PD) 口袋深度"""
+    row_map = collect_comparison_row_indices(df)
+    tooth_rows = find_tooth_rows(df)
+    records = {}
+
+    if not tooth_rows:
+        return records
+
+    up_cols = get_tooth_start_columns(df, tooth_rows[0])
+    lo_cols = get_tooth_start_columns(df, tooth_rows[-1]) if len(tooth_rows) > 1 else {}
+
+    for tooth in range(11, 49):
+        if tooth in missing_teeth:
+            continue
+
+        pd_vals = []
+        col_start = None
+
+        if tooth // 10 in [1, 2] and tooth in up_cols:
+            col_start = up_cols[tooth]
+            r_buccal = row_map.get("up_b_pd_i")
+            r_palatal = row_map.get("up_p_pd_i")
+            raw_b = get_three_digit_raw_list(df, r_buccal, col_start)
+            raw_p = get_three_digit_raw_list(df, r_palatal, col_start)
+            for v in raw_b + raw_p:
+                if v.isdigit(): pd_vals.append(int(v))
+
+        elif tooth // 10 in [3, 4] and tooth in lo_cols:
+            col_start = lo_cols[tooth]
+            r_lingual = row_map.get("lo_l_pd_i")
+            r_buccal = row_map.get("lo_b_pd_i")
+            raw_l = get_three_digit_raw_list(df, r_lingual, col_start)
+            raw_b = get_three_digit_raw_list(df, r_buccal, col_start)
+            for v in raw_l + raw_b:
+                if v.isdigit(): pd_vals.append(int(v))
+
+        records[tooth] = {"pd_values": pd_vals}
+
+    return records
+
+def generate_present_dentition(df: pd.DataFrame, tooth_rows: list, missing_teeth: set) -> str:
+    """編織 Present Dentition 病歷文字格式"""
+    all_teeth = set(range(11, 19)) | set(range(21, 29)) | set(range(31, 39)) | set(range(41, 49))
+    present = sorted(list(all_teeth - missing_teeth))
+    missing = sorted(list(missing_teeth))
+
+    present_str = ", ".join(map(str, present)) if present else "None"
+    missing_str = ", ".join(map(str, missing)) if missing else "nil"
+
+    return f" 1. Present dentition: {present_str}\n    Missing teeth: {missing_str}"
+
+def get_flagged_teeth_string(records: dict, ordered_groups: list, gap: int = 6) -> str:
+    """收集口袋深度 PD >= 4mm 的牙號報告"""
+    flagged = []
+    for tooth in sorted(records.keys()):
+        pd_vals = records[tooth].get("pd_values", [])
+        if any(v >= 4 for v in pd_vals):
+            flagged.append(str(tooth))
+
+    flagged_str = ", ".join(flagged) if flagged else "nil"
+    return f" 3. Probing depth >= 4mm noted at teeth: {flagged_str}"
+
+def print_mobility_summary(df: pd.DataFrame, missing_teeth: set):
+    """印出 Mobility 搖動度摘要"""
+    row_map = collect_comparison_row_indices(df)
+    tooth_rows = find_tooth_rows(df)
+    mob_teeth = []
+
+    if tooth_rows:
+        up_cols = get_tooth_start_columns(df, tooth_rows[0])
+        r_up_mob = row_map.get("up_mob_i")
+        if r_up_mob is not None:
+            for t, c in up_cols.items():
+                if t not in missing_teeth:
+                    v = clean_cell(df.iloc[r_up_mob, c])
+                    if v and v != "0" and v != "?":
+                        mob_teeth.append(f"{t}(Degree {v})")
+
+        if len(tooth_rows) > 1:
+            lo_cols = get_tooth_start_columns(df, tooth_rows[-1])
+            r_lo_mob = row_map.get("lo_mob_i")
+            if r_lo_mob is not None:
+                for t, c in lo_cols.items():
+                    if t not in missing_teeth:
+                        v = clean_cell(df.iloc[r_lo_mob, c])
+                        if v and v != "0" and v != "?":
+                            mob_teeth.append(f"{t}(Degree {v})")
+
+    if mob_teeth:
+        print(f" 4. Mobility: {', '.join(mob_teeth)}")
+    else:
+        print(" 4. Mobility: nil")
+
+def print_furcation_summary(df: pd.DataFrame, missing_teeth: set):
+    """印出 Furcation 根分叉摘要"""
+    furc_rows = find_furcation_rows(df)
+    tooth_rows = find_tooth_rows(df)
+    furc_teeth = []
+
+    if furc_rows and tooth_rows:
+        up_cols = get_tooth_start_columns(df, tooth_rows[0])
+        r_up_val = furc_rows[0]["value_row"] if len(furc_rows) > 0 else None
+
+        if r_up_val is not None and r_up_val < len(df):
+            for t, c in up_cols.items():
+                if t not in missing_teeth:
+                    raw_vals = get_three_digit_raw_list(df, r_up_val, c)
+                    valid_f = [v for v in raw_vals if v in ['1', '2', '3', 'I', 'II', 'III']]
+                    if valid_f:
+                        furc_teeth.append(f"{t}(Class {valid_f[0]})")
+
+    if furc_teeth:
+        print(f"\n 5. Furcation: {', '.join(furc_teeth)}")
+    else:
+        print("\n 5. Furcation: nil")
