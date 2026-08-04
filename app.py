@@ -112,10 +112,10 @@ def render_periodontal_generator_page():
 
             st.markdown("### 生成簡報下載")
             if is_comparison:
-                st.info("此 CSV 包含 Initial & Re-evaluation")
+                st.info("生成 Initial & Re-evaluation 簡報")
                 ppt_comparison = create_comparison_presentation(df, missing_teeth)
                 st.download_button(
-                    label=f"📥 下載對比簡報 ({output_filename})",
+                    label="📥 下載簡報",
                     data=ppt_comparison,
                     file_name=output_filename,
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
@@ -123,10 +123,17 @@ def render_periodontal_generator_page():
                 st.write("---")
                 st.write("")
             else:
-                st.info("此 CSV 為單一階段資料")
+                # 🚀 動態判斷是 Initial 還是 Re-evaluation
+                file_name_lower = uploaded_file.name.lower()
+                if "re-evaluation" in file_name_lower or "re" in file_name_lower:
+                    stage_name = "Re-evaluation"
+                else:
+                    stage_name = "Initial"
+
+                st.info(f"生成 {stage_name} 簡報")
                 ppt_initial = create_six_sextants_presentation(df, missing_teeth)
                 st.download_button(
-                    label=f"📥 下載單階段簡報 ({output_filename})",
+                    label=f"📥 下載簡報",
                     data=ppt_initial,
                     file_name=output_filename,
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
@@ -134,26 +141,6 @@ def render_periodontal_generator_page():
                 st.write("---")
                 st.write("")
 
-            # ============================================================
-            # 區塊 1：隱私保護與使用免責聲明 
-            # ============================================================
-            with st.expander("⚖️ 隱私保護與免責聲明", expanded=False):
-                st.markdown("""
-                    <style>
-                    .disclaimer-text {
-                        font-size: 13px;
-                        color: #666666;
-                        line-height: 1.6;
-                    }
-                    </style>
-                    <div class="disclaimer-text">
-                        <ul>
-                            <li><b>零資料留存</b>：本工具為純前端即時解析軟體，原始碼絕不具備任何資料庫上傳、硬碟儲存或歷史紀錄留存功能。</li>
-                            <li><b>即時銷毀</b>：上傳之 CSV 檔案僅短暫載入伺服器記憶體中進行排版計算，網頁一旦關閉或重新整理，數據立刻完全銷毀。</li>
-                            <li><b>去識別化建議</b>：強烈建議使用者在上傳前，先將檔案內之病患敏感資訊（如真實姓名、身分證字號）匿名、或是去識別化。</li>
-                        </ul>
-                    </div>
-                """, unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"解析檔案時發生錯誤：{str(e)}")
@@ -167,6 +154,26 @@ def main():
 
     if page_choice == "牙周簡報生成 (PPT)":
         render_periodontal_generator_page()
+        # ============================================================
+        # 區塊 1：隱私保護與使用免責聲明 
+        # ============================================================
+        with st.expander("⚖️ 隱私保護與免責聲明", expanded=False):
+            st.markdown("""
+                <style>
+                .disclaimer-text {
+                    font-size: 13px;
+                    color: #666666;
+                    line-height: 1.6;
+                }
+                </style>
+                <div class="disclaimer-text">
+                    <ul>
+                        <li><b>零資料留存</b>：本工具為純前端即時解析軟體，原始碼絕不具備任何資料庫上傳、硬碟儲存或歷史紀錄留存功能。</li>
+                        <li><b>即時銷毀</b>：上傳之 CSV 檔案僅短暫載入伺服器記憶體中進行排版計算，網頁一旦關閉或重新整理，數據立刻完全銷毀。</li>
+                        <li><b>去識別化建議</b>：強烈建議使用者在上傳前，先將檔案內之病患敏感資訊（如真實姓名、身分證字號）匿名、或是去識別化。</li>
+                    </ul>
+                </div>
+            """, unsafe_allow_html=True)
     elif page_choice == "12 口內照上傳展示 (Photos)":
         render_intraoral_photo_page()
       
