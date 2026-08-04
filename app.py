@@ -108,7 +108,7 @@ def render_periodontal_generator_page():
             output_filename = format_download_filename(uploaded_file.name, is_comparison)
 
             if is_comparison:
-                st.info("生成 Initial & Re-evaluation 簡報")
+                st.success("生成 Initial & Re-evaluation 簡報，請稍候")
                 ppt_comparison = create_comparison_presentation(df, missing_teeth)
                 st.download_button(
                     label="📥 下載簡報",
@@ -126,7 +126,7 @@ def render_periodontal_generator_page():
                 else:
                     stage_name = "Initial"
 
-                st.info(f"生成 {stage_name} 簡報")
+                st.info(f"生成 {stage_name} 簡報，請稍候")
                 ppt_initial = create_six_sextants_presentation(df, missing_teeth)
                 st.download_button(
                     label=f"📥 下載簡報",
