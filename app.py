@@ -50,30 +50,6 @@ with col1:
 
 st.markdown("6. 去電腦的下載項目資料夾，找到要上傳的檔案！")
 st.write("")
-# ============================================================
-# 區塊 1：隱私保護與使用免責聲明 
-# ============================================================
-with st.expander("⚖️ 隱私保護與免責聲明", expanded=False):
-    st.markdown("""
-        <style>
-        .disclaimer-text {
-            font-size: 13px;
-            color: #666666;
-            line-height: 1.6;
-        }
-        </style>
-        <div class="disclaimer-text">
-            <ul>
-                <li><b>零資料留存</b>：本工具為純前端即時解析軟體，原始碼絕不具備任何資料庫上傳、硬碟儲存或歷史紀錄留存功能。</li>
-                <li><b>即時銷毀</b>：上傳之 CSV 檔案僅短暫載入伺服器記憶體中進行排版計算，網頁一旦關閉或重新整理，數據立刻完全銷毀。</li>
-                <li><b>去識別化建議</b>：強烈建議使用者在上傳前，先將檔案內之病患敏感資訊（如真實姓名、身分證字號）匿名、或是去識別化。</li>
-            </ul>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    # 增加一點垂直間距
-    st.write("")
-    st.write("---")
 
 def render_periodontal_generator_page():
    
@@ -86,11 +62,6 @@ def render_periodontal_generator_page():
             st.success("CSV 檔案讀取成功！")
             
             missing_teeth = find_missing_teeth(df)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**自動偵測缺牙牙號**：", sorted(list(missing_teeth)))
-
             is_comparison = is_comparison_file(df)
 
             st.markdown("### 生成簡報下載")
@@ -112,6 +83,30 @@ def render_periodontal_generator_page():
                     file_name="Periodontal_Initial_Report.pptx",
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
+            # ============================================================
+            # 區塊 1：隱私保護與使用免責聲明 
+            # ============================================================
+            with st.expander("⚖️ 隱私保護與免責聲明", expanded=False):
+                st.markdown("""
+                    <style>
+                    .disclaimer-text {
+                        font-size: 13px;
+                        color: #666666;
+                        line-height: 1.6;
+                    }
+                    </style>
+                    <div class="disclaimer-text">
+                        <ul>
+                            <li><b>零資料留存</b>：本工具為純前端即時解析軟體，原始碼絕不具備任何資料庫上傳、硬碟儲存或歷史紀錄留存功能。</li>
+                            <li><b>即時銷毀</b>：上傳之 CSV 檔案僅短暫載入伺服器記憶體中進行排版計算，網頁一旦關閉或重新整理，數據立刻完全銷毀。</li>
+                            <li><b>去識別化建議</b>：強烈建議使用者在上傳前，先將檔案內之病患敏感資訊（如真實姓名、身分證字號）匿名、或是去識別化。</li>
+                        </ul>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                # 增加一點垂直間距
+                st.write("")
+                st.write("---")
 
         except Exception as e:
             st.error(f"解析檔案時發生錯誤：{str(e)}")
@@ -127,6 +122,6 @@ def main():
         render_periodontal_generator_page()
     elif page_choice == "12 口內照上傳展示 (Photos)":
         render_intraoral_photo_page()
-
+     
 if __name__ == "__main__":
     main()
