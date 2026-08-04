@@ -23,11 +23,12 @@ st.set_page_config(
 # ============================================================
 st.title("🦷 PerioGenerator")
 st.markdown('<div style="text-align: right;"><b>【 Established by B09 王冠中 】</b></div>', unsafe_allow_html=True)
-st.markdown("1. 去你要下載的 Charting Google sheet 選擇對的工作簿（Initial or Initial&Re-evaluation")
-st.markdown("2. 找到左上方「檔案")
-st.markdown("3. 點擊「下載」")
-st.markdown("4. 選擇下載「逗號分隔值檔案（.csv）」")
-st.markdown("5. 去電腦的下載項目資料夾，找到要上傳的檔案！")
+st.markdown("1. 去你要下載的 Charting Google sheet")
+st.markdown("2. 選擇對的工作簿（Initial or Initial & Re-evaluation)")
+st.markdown("3. 點擊左上方「檔案」")
+st.markdown("4. 點擊「下載」")
+st.markdown("5. 下載「逗號分隔值檔案（.csv）」")
+st.markdown("6. 去電腦的下載項目資料夾，找到要上傳的檔案！")
 
 col1, col2 = st.columns([3, 4])  # 左邊佔 3/7，右邊佔 4/7
 with col1:
