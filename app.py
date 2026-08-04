@@ -49,6 +49,8 @@ with col1:
         st.warning(f"⚠️ 找不到說明圖片：{image_path_download}")
 
 st.markdown("6. 去電腦的下載項目資料夾，找到要上傳的檔案！")
+
+st.write("---")
 st.write("")
 
 def render_periodontal_generator_page():
@@ -66,21 +68,21 @@ def render_periodontal_generator_page():
 
             st.markdown("### 生成簡報下載")
             if is_comparison:
-                st.info("偵測到此 CSV 包含 Initial & Re-evaluation 對比資料。")
+                st.info("此 CSV 包含 Initial & Re-evaluation")
                 ppt_comparison = create_comparison_presentation(df, missing_teeth)
                 st.download_button(
-                    label="📥 下載 Comparison 對比簡報 (.pptx)",
+                    label="📥 下載 Initial & Re-evaluation 對比簡報",
                     data=ppt_comparison,
-                    file_name="Periodontal_Comparison_Report.pptx",
+                    file_name="Peri_CC_Report.pptx",
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
             else:
-                st.info("偵測到此 CSV 為單一階段 Initial 資料。")
+                st.info("此 CSV 為 Initial or Re-evaluation")
                 ppt_initial = create_six_sextants_presentation(df, missing_teeth)
                 st.download_button(
-                    label="📥 下載 Initial 簡報 (.pptx)",
+                    label="📥 下載 Initial 簡報",
                     data=ppt_initial,
-                    file_name="Periodontal_Initial_Report.pptx",
+                    file_name="Peri_initial_Report.pptx",
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
             # ============================================================
@@ -105,14 +107,15 @@ def render_periodontal_generator_page():
                 """, unsafe_allow_html=True)
                 
                 # 增加一點垂直間距
-                st.write("")
                 st.write("---")
+                st.write("")
+                
 
         except Exception as e:
             st.error(f"解析檔案時發生錯誤：{str(e)}")
 
 def main():
-    st.sidebar.title("🦷 功能導航")
+    st.sidebar.title("🦷")
     page_choice = st.sidebar.radio(
         "請選擇功能模組：",
         ["牙周簡報生成 (PPT)", "12 口內照上傳展示 (Photos)"]
