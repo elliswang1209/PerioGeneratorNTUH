@@ -67,7 +67,7 @@ def format_download_filename(original_filename: str, is_comparison: bool) -> str
 # ============================================================
 def generate_objective_text(df_raw: pd.DataFrame) -> str:
     """
-    解析 CSV 原始資料，編織生成包含 Palmer 十字齒列、位點矩陣與動態 Furcation 的標準 Objective 病歷文字。
+    解析 CSV 原始資料，編織生成包含 Palmer 十字齒列、分象限位點矩陣與排序後 Furcation 的標準 Objective 病歷文字。
     """
     tooth_rows_idx = find_tooth_rows(df_raw)
     missing_rows_idx = find_missing_rows(df_raw)
