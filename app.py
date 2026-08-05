@@ -15,11 +15,10 @@ from core_parser import (
     find_tooth_rows,
     find_missing_rows,
     get_missing_teeth_set,
-    parse_periodontal_pd,
-    generate_present_dentition,
-    get_flagged_teeth_string,
-    print_mobility_summary,
-    print_furcation_summary
+    generate_cross_dentition,
+    format_detailed_pd_section,
+    format_mobility_section,
+    format_furcation_section
 )
 from pptx_engine import create_six_sextants_presentation, create_comparison_presentation
 
@@ -63,6 +62,9 @@ def format_download_filename(original_filename: str, is_comparison: bool) -> str
 
     return f"{patient_info}_{suffix}.pptx"
 
+# ============================================================
+# 輔助函式：生成 Objective 病歷文字
+# ============================================================
 def generate_objective_text(df_raw: pd.DataFrame) -> str:
     """
     解析 CSV 原始資料，編織生成精美美觀的標準 Objective 病歷紀錄文字。
@@ -84,6 +86,7 @@ def generate_objective_text(df_raw: pd.DataFrame) -> str:
     ]
 
     return "\n".join(output_lines)
+
 # ============================================================
 # 頂部大標題區塊
 # ============================================================
