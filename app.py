@@ -65,7 +65,6 @@ def format_download_filename(original_filename: str, is_comparison: bool) -> str
 # ============================================================
 # 輔助函式：生成 Objective 病歷文字
 # ============================================================
-
 def generate_objective_text(df_raw: pd.DataFrame) -> str:
     """
     解析 CSV 原始資料，編織生成包含 Palmer 十字齒列、位點矩陣與動態 Furcation 的標準 Objective 病歷文字。
@@ -83,10 +82,11 @@ def generate_objective_text(df_raw: pd.DataFrame) -> str:
         "",
         format_mobility_section(df_raw, missing_teeth),
         "",
-        format_furcation_section(df_raw, missing_teeth)  # 🚀 呼叫支援動態方位 (M1, B1, D1) 的 Furcation 函式
+        format_furcation_section(df_raw, missing_teeth)
     ]
 
     return "\n".join(output_lines)
+
 # ============================================================
 # 頂部大標題區塊
 # ============================================================
@@ -153,7 +153,7 @@ def render_periodontal_generator_page():
                 else:
                     stage_name = "Initial"
 
-                st.info(f"生成 {stage_name} 簡報，請稍候")
+                st.success(f"生成 {stage_name} 簡報，請稍候")
                 ppt_initial = create_six_sextants_presentation(df, missing_teeth)
                 st.download_button(
                     label="📥 下載簡報",
