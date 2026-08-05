@@ -292,28 +292,99 @@ def print_mobility_summary(df: pd.DataFrame, missing_teeth: set):
     else:
         print(" 4. Mobility: nil")
 
-def print_furcation_summary(df: pd.DataFrame, missing_teeth: set):
-    """印出 Furcation 根分叉摘要"""
+def get_site_code_from_label_cell(df: pd.DataFrame, label_row: int, col_idx: int) -> str:
+    """
+    動態讀取數值上方一列 (label_row) 的文字，判讀並回傳標準位點代碼 (M, B, D, L, P)
+    """
+    if label_row is None or label_row < 0 or label_row >= len(df):
+        return ""
+    
+    cell_text = clean_cell(df.iloc[label_row, col_idx]).upper()
+    
+    if "MESIAL" in cell_text or cell_text == "M":
+        return "M"
+    elif "BUCCAL" in cell_text or cell_text == "B" or "FACIAL" in cell_text or cell_text == "F":
+        return "B"
+    elif "DISTAL" in cell_text or cell_text == "D":
+        return "D"
+    elif "LINGUAL" in cell_text or cell_text == "L":
+        return "L"
+    elif "PALATAL" in cell_text or cell_text == "P":
+        return "P"
+    
+    return ""
+
+def format_furcation_section(df: pd.DataFrame, missing_teeth: set) -> str:
+    """
+    生成 5. Furcation 上下顎報告
+    動態讀取數值上面一列的 Label 文字來精準判斷方位 (如 M1, B1, D1, L1)
+    """
     furc_rows = find_furcation_rows(df)
     tooth_rows = find_tooth_rows(df)
-    furc_teeth = []
+
+    upper_furc, lower_furc = [], []
 
     if furc_rows and tooth_rows:
         up_cols = get_tooth_start_columns(df, tooth_rows[0])
-        r_up_val = furc_rows[0]["value_row"] if len(furc_rows) > 0 else None
+        lo_cols = get_tooth_start_columns(df, tooth_rows[-1]) if len(tooth_rows) > 1 else {}
 
-        if r_up_val is not None and r_up_val < len(df):
-            for t, c in up_cols.items():
+        up_info = furc_rows[0] if len(furc_rows) > 0 else None
+        lo_info = furc_rows[-1] if len(furc_rows) > 1 else None
+
+        # 1. 處理上顎 Upper Furcation
+        if up_info and up_info["value_row"] < len(df):
+            r_val = up_info["value_row"]
+            r_label = up_info["label_row"]
+
+            for t in sorted(up_cols.keys()):
                 if t not in missing_teeth:
-                    raw_vals = get_three_digit_raw_list(df, r_up_val, c)
-                    valid_f = [v for v in raw_vals if v in ['1', '2', '3', 'I', 'II', 'III']]
-                    if valid_f:
-                        furc_teeth.append(f"{t}(Class {valid_f[0]})")
+                    c = up_cols[t]
+                    f_str = ""
+                    for offset in range(3):
+                        curr_col = c + offset
+                        if curr_col < df.shape[1]:
+                            v = clean_cell(df.iloc[r_val, curr_col])
+                            v_clean = v.replace("Class", "").replace("Grade", "").replace("Gr", "").strip()
+                            
+                            if v_clean in ['1', '2', '3', 'I', 'II', 'III']:
+                                grade_num = "1" if v_clean == "I" else ("2" if v_clean == "II" else ("3" if v_clean == "III" else v_clean))
+                                site_code = get_site_code_from_label_cell(df, r_label, curr_col)
+                                f_str += f"{site_code}{grade_num}"
 
-    if furc_teeth:
-        print(f"\n 5. Furcation: {', '.join(furc_teeth)}")
-    else:
-        print("\n 5. Furcation: nil")
+                    if f_str:
+                        upper_furc.append(f"{t}({f_str})")
+
+        # 2. 處理下顎 Lower Furcation
+        if lo_info and lo_info["value_row"] < len(df):
+            r_val = lo_info["value_row"]
+            r_label = lo_info["label_row"]
+
+            for t in sorted(lo_cols.keys()):
+                if t not in missing_teeth:
+                    c = lo_cols[t]
+                    f_str = ""
+                    for offset in range(3):
+                        curr_col = c + offset
+                        if curr_col < df.shape[1]:
+                            v = clean_cell(df.iloc[r_val, curr_col])
+                            v_clean = v.replace("Class", "").replace("Grade", "").replace("Gr", "").strip()
+                            
+                            if v_clean in ['1', '2', '3', 'I', 'II', 'III']:
+                                grade_num = "1" if v_clean == "I" else ("2" if v_clean == "II" else ("3" if v_clean == "III" else v_clean))
+                                site_code = get_site_code_from_label_cell(df, r_label, curr_col)
+                                f_str += f"{site_code}{grade_num}"
+
+                    if f_str:
+                        lower_furc.append(f"{t}({f_str})")
+
+    str_up = " ".join(upper_furc) if upper_furc else "nil"
+    str_lo = " ".join(lower_furc) if lower_furc else "nil"
+
+    return f" 5. Furcation:\n-Upper: {str_up}\n-Lower: {str_lo}"
+
+def print_furcation_summary(df: pd.DataFrame, missing_teeth: set):
+    """印出 Furcation 根分叉摘要 (覆蓋舊版，同步最新動態判讀格式)"""
+    print(format_furcation_section(df, missing_teeth))
 
 # ============================================================
 # 🚀 漂亮格式 Objective 病歷文字生成核心函式
