@@ -41,7 +41,6 @@ def find_furcation_rows(df):
     furcation_rows = []
     for i in range(len(df)):
         row_text = " ".join([clean_cell(df.iloc[i, c]) for c in range(df.shape[1])]).lower()
-        # 🚀 排除 "grade" 與 "scale" 等說明標題列，精確鎖定真正的 Furcation 數據標籤列
         if "furcation" in row_text and "grade" not in row_text and "scale" not in row_text:
             furcation_rows.append({"header_row": i, "label_row": i, "value_row": i + 1})
     return furcation_rows
@@ -73,13 +72,11 @@ def get_missing_teeth_set(df, tooth_rows, missing_rows):
     return missing_teeth
 
 def find_missing_teeth(df) -> Set[int]:
-    """快捷缺牙掃描函式，確保 app.py 呼叫不拋錯"""
     tooth_rows = find_tooth_rows(df)
     missing_rows = find_missing_rows(df)
     return get_missing_teeth_set(df, tooth_rows, missing_rows)
 
 def collect_comparison_row_indices(df):
-    """智慧型分區列號收集器：修復 CAL 被 MOBILITY SCALE 誤讀之 Bug"""
     is_comp = is_comparison_file(df)
 
     midpoint = len(df) // 2
@@ -91,7 +88,6 @@ def collect_comparison_row_indices(df):
 
     res = {}
 
-    # 1. 上顎 (Upper Arch: 0 ~ midpoint)
     for r in range(0, midpoint):
         c0 = clean_cell(df.iloc[r, 0]).upper()
         c1 = clean_cell(df.iloc[r, 1]).upper()
@@ -107,7 +103,6 @@ def collect_comparison_row_indices(df):
         elif ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "up_b_gm_i" in res and "up_p_gm_i" not in res:
             res["up_p_gm_i"] = r; res["up_p_gm_r"] = r + 1 if is_comp else r
 
-        # 🚀 排除 SCALE，精確匹配 CAL
         if "CAL" in prefix and "SCALE" not in prefix and "up_b_cal_i" not in res:
             res["up_b_cal_i"] = r; res["up_b_cal_r"] = r + 1 if is_comp else r
         elif "CAL" in prefix and "SCALE" not in prefix and "up_b_cal_i" in res and "up_p_cal_i" not in res:
@@ -119,7 +114,6 @@ def collect_comparison_row_indices(df):
         if "MOBILITY" in prefix and "SCALE" not in prefix and "up_mob_i" not in res:
             res["up_mob_i"] = r; res["up_mob_r"] = r + 1 if is_comp else r
 
-    # 2. 下顎 (Lower Arch: midpoint ~ len(df))
     for r in range(midpoint, len(df)):
         c0 = clean_cell(df.iloc[r, 0]).upper()
         c1 = clean_cell(df.iloc[r, 1]).upper()
@@ -135,7 +129,6 @@ def collect_comparison_row_indices(df):
         elif ("GM" in prefix or "RECESSION" in prefix or "CEJ" in prefix) and "lo_l_gm_i" in res and "lo_b_gm_i" not in res:
             res["lo_b_gm_i"] = r; res["lo_b_gm_r"] = r + 1 if is_comp else r
 
-        # 🚀 排除 SCALE，精確匹配 CAL
         if "CAL" in prefix and "SCALE" not in prefix and "lo_l_cal_i" not in res:
             res["lo_l_cal_i"] = r; res["lo_l_cal_r"] = r + 1 if is_comp else r
         elif "CAL" in prefix and "SCALE" not in prefix and "lo_l_cal_i" in res and "lo_b_cal_i" not in res:
@@ -175,16 +168,10 @@ def parse_periodontal_csv(file_stream) -> Tuple[Any, Set[int], bool, Dict[str, A
 
     return df, missing_teeth, is_comp, patient_info
 
-# ============================================================
-# 🚀 補全 app.py 介面相容函式 (Objective 病歷文字編織)
-# ============================================================
-
 def collect_absolute_row_indices(df: pd.DataFrame) -> dict:
-    """相容性函式：提供 app.py 與 pptx_engine 解鎖特定資料行號"""
     return collect_comparison_row_indices(df)
 
 def extract_implant_teeth(df: pd.DataFrame) -> set:
-    """提取植牙牙號集合"""
     implant_teeth = set()
     for r in range(len(df)):
         row_str = " ".join([clean_cell(df.iloc[r, c]).upper() for c in range(df.shape[1])])
@@ -199,7 +186,6 @@ def extract_implant_teeth(df: pd.DataFrame) -> set:
     return implant_teeth
 
 def parse_periodontal_pd(df: pd.DataFrame, missing_teeth: set) -> dict:
-    """解析 11~48 牙齒之 Probing Depth (PD) 口袋深度"""
     row_map = collect_comparison_row_indices(df)
     tooth_rows = find_tooth_rows(df)
     records = {}
@@ -240,7 +226,6 @@ def parse_periodontal_pd(df: pd.DataFrame, missing_teeth: set) -> dict:
     return records
 
 def generate_present_dentition(df: pd.DataFrame, tooth_rows: list, missing_teeth: set) -> str:
-    """編織 Present Dentition 病歷文字格式"""
     all_teeth = set(range(11, 19)) | set(range(21, 29)) | set(range(31, 39)) | set(range(41, 49))
     present = sorted(list(all_teeth - missing_teeth))
     missing = sorted(list(missing_teeth))
@@ -251,7 +236,6 @@ def generate_present_dentition(df: pd.DataFrame, tooth_rows: list, missing_teeth
     return f" 1. Present dentition: {present_str}\n    Missing teeth: {missing_str}"
 
 def get_flagged_teeth_string(records: dict, ordered_groups: list, gap: int = 6) -> str:
-    """收集口袋深度 PD >= 4mm 的牙號報告"""
     flagged = []
     for tooth in sorted(records.keys()):
         pd_vals = records[tooth].get("pd_values", [])
@@ -262,7 +246,6 @@ def get_flagged_teeth_string(records: dict, ordered_groups: list, gap: int = 6) 
     return f" 3. Probing depth >= 4mm noted at teeth: {flagged_str}"
 
 def print_mobility_summary(df: pd.DataFrame, missing_teeth: set):
-    """印出 Mobility 搖動度摘要"""
     row_map = collect_comparison_row_indices(df)
     tooth_rows = find_tooth_rows(df)
     mob_teeth = []
@@ -383,7 +366,6 @@ def format_furcation_section(df: pd.DataFrame, missing_teeth: set) -> str:
     return f" 5. Furcation:\n-Upper: {str_up}\n-Lower: {str_lo}"
 
 def print_furcation_summary(df: pd.DataFrame, missing_teeth: set):
-    """印出 Furcation 根分叉摘要 (覆蓋舊版，同步最新動態判讀格式)"""
     print(format_furcation_section(df, missing_teeth))
 
 # ============================================================
@@ -391,8 +373,6 @@ def print_furcation_summary(df: pd.DataFrame, missing_teeth: set):
 # ============================================================
 
 def generate_cross_dentition(missing_teeth: set) -> str:
-    """生成 1. Present dentition 十字齒列圖形"""
-    # 定義四個象限的所有牙齒個位數 (1~8)
     q1 = [t % 10 for t in range(18, 10, -1) if t not in missing_teeth]
     q2 = [t % 10 for t in range(21, 29) if t not in missing_teeth]
     q4 = [t % 10 for t in range(48, 40, -1) if t not in missing_teeth]
@@ -412,7 +392,6 @@ def generate_cross_dentition(missing_teeth: set) -> str:
     )
 
 def format_detailed_pd_section(df: pd.DataFrame, missing_teeth: set, threshold: int = 5) -> str:
-    """生成 3. Probing depth >= 5mm 詳細六點位點對齊排版 (每行最多4顆牙)"""
     records = parse_periodontal_pd(df, missing_teeth)
     row_map = collect_comparison_row_indices(df)
     tooth_rows = find_tooth_rows(df)
@@ -431,7 +410,6 @@ def format_detailed_pd_section(df: pd.DataFrame, missing_teeth: set, threshold: 
         if any(v >= threshold for v in pd_vals if isinstance(v, int)):
             flagged_teeth.append(tooth)
             
-            # 抓取 6 個位點數字，若缺漏則以 '?' 補足
             col_start = up_cols.get(tooth) if tooth // 10 in [1, 2] else lo_cols.get(tooth)
             
             if tooth // 10 in [1, 2]:
@@ -440,7 +418,6 @@ def format_detailed_pd_section(df: pd.DataFrame, missing_teeth: set, threshold: 
                 b_vals = get_three_digit_raw_list(df, r_b, col_start) if col_start is not None else ["?", "?", "?"]
                 p_vals = get_three_digit_raw_list(df, r_p, col_start) if col_start is not None else ["?", "?", "?"]
                 
-                # 上顎格式：MB, B, DB / MP, P, DP
                 line1 = f"DB {b_vals[2]}{b_vals[1]}{b_vals[0]} MB" if tooth // 10 == 1 else f"MB {b_vals[0]}{b_vals[1]}{b_vals[2]} DB"
                 line2 = f"DP {p_vals[2]}{p_vals[1]}{p_vals[0]} MP" if tooth // 10 == 1 else f"MP {p_vals[0]}{p_vals[1]}{p_vals[2]} DP"
             else:
@@ -449,7 +426,6 @@ def format_detailed_pd_section(df: pd.DataFrame, missing_teeth: set, threshold: 
                 l_vals = get_three_digit_raw_list(df, r_l, col_start) if col_start is not None else ["?", "?", "?"]
                 b_vals = get_three_digit_raw_list(df, r_b, col_start) if col_start is not None else ["?", "?", "?"]
                 
-                # 下顎格式
                 line1 = f"DL {l_vals[2]}{l_vals[1]}{l_vals[0]} ML" if tooth // 10 == 4 else f"ML {l_vals[0]}{l_vals[1]}{l_vals[2]} DL"
                 line2 = f"DB {b_vals[2]}{b_vals[1]}{b_vals[0]} MB" if tooth // 10 == 4 else f"MB {b_vals[0]}{b_vals[1]}{b_vals[2]} DB"
 
@@ -461,11 +437,8 @@ def format_detailed_pd_section(df: pd.DataFrame, missing_teeth: set, threshold: 
     teeth_str = " ".join(map(str, flagged_teeth))
     out = [f" 3. Probing depth >={threshold}mm: tooth {teeth_str}\n"]
 
-    # 每 4 顆牙分一組印出
     for i in range(0, len(flagged_teeth), 4):
         chunk = flagged_teeth[i:i+4]
-        
-        # 標題行 (例如: tooth 17          tooth 16 ...)
         header = "".join([f"tooth {t:<12}" for t in chunk])
         l1 = "".join([f"   {tooth_details[t][0]:<15}" for t in chunk])
         l2 = "".join([f"   {tooth_details[t][1]:<15}" for t in chunk])
@@ -473,12 +446,11 @@ def format_detailed_pd_section(df: pd.DataFrame, missing_teeth: set, threshold: 
         out.append(header)
         out.append(l1)
         out.append(l2)
-        out.append("")  # 空行分隔組別
+        out.append("")
 
     return "\n".join(out)
 
 def format_mobility_section(df: pd.DataFrame, missing_teeth: set) -> str:
-    """生成 4. Mobility 分級報告"""
     row_map = collect_comparison_row_indices(df)
     tooth_rows = find_tooth_rows(df)
 
@@ -502,36 +474,3 @@ def format_mobility_section(df: pd.DataFrame, missing_teeth: set) -> str:
     str_g3 = " ".join(gr3) if gr3 else "nil"
 
     return f" 4. Mobility:\n-Gr. I: {str_g1}\n-Gr. II: {str_g2}\n-Gr. III: {str_g3}"
-
-def format_furcation_section(df: pd.DataFrame, missing_teeth: set) -> str:
-    """生成 5. Furcation 上下顎報告"""
-    furc_rows = find_furcation_rows(df)
-    tooth_rows = find_tooth_rows(df)
-
-    upper_furc, lower_furc = [], []
-
-    if furc_rows and tooth_rows:
-        up_cols = get_tooth_start_columns(df, tooth_rows[0])
-        lo_cols = get_tooth_start_columns(df, tooth_rows[-1]) if len(tooth_rows) > 1 else {}
-
-        r_up = furc_rows[0]["value_row"] if len(furc_rows) > 0 else None
-        r_lo = furc_rows[-1]["value_row"] if len(furc_rows) > 1 else None
-
-        if r_up is not None and r_up < len(df):
-            for t, c in up_cols.items():
-                if t not in missing_teeth:
-                    vals = get_three_digit_raw_list(df, r_up, c)
-                    valid = [v for v in vals if v in ['1', '2', '3', 'I', 'II', 'III']]
-                    if valid: upper_furc.append(f"{t}(Grade {valid[0]})")
-
-        if r_lo is not None and r_lo < len(df):
-            for t, c in lo_cols.items():
-                if t not in missing_teeth:
-                    vals = get_three_digit_raw_list(df, r_lo, c)
-                    valid = [v for v in vals if v in ['1', '2', '3', 'I', 'II', 'III']]
-                    if valid: lower_furc.append(f"{t}(Grade {valid[0]})")
-
-    str_up = " ".join(upper_furc) if upper_furc else "nil"
-    str_lo = " ".join(lower_furc) if lower_furc else "nil"
-
-    return f" 5. Furcation:\n-Upper: {str_up}\n-Lower: {str_lo}"
