@@ -297,15 +297,99 @@ def get_site_code_from_label_cell(df: pd.DataFrame, label_row: int, col_idx: int
     
     return ""
 
+def format_detailed_pd_section(df: pd.DataFrame, missing_teeth: set, threshold: int = 5) -> str:
+    """
+    生成 3. Probing depth >= 5mm 詳細六點位點對齊排版
+    🚀 按照 1、2、3、4 象限分開一排排顯示
+    """
+    records = parse_periodontal_pd(df, missing_teeth)
+    row_map = collect_comparison_row_indices(df)
+    tooth_rows = find_tooth_rows(df)
+
+    if not tooth_rows:
+        return f" 3. Probing depth >={threshold}mm: nil"
+
+    up_cols = get_tooth_start_columns(df, tooth_rows[0])
+    lo_cols = get_tooth_start_columns(df, tooth_rows[-1]) if len(tooth_rows) > 1 else {}
+
+    flagged_teeth = []
+    tooth_details = {}
+
+    for tooth in sorted(records.keys()):
+        pd_vals = records[tooth].get("pd_values", [])
+        if any(v >= threshold for v in pd_vals if isinstance(v, int)):
+            flagged_teeth.append(tooth)
+            
+            col_start = up_cols.get(tooth) if tooth // 10 in [1, 2] else lo_cols.get(tooth)
+            
+            if tooth // 10 in [1, 2]:
+                r_b = row_map.get("up_b_pd_i")
+                r_p = row_map.get("up_p_pd_i")
+                b_vals = get_three_digit_raw_list(df, r_b, col_start) if col_start is not None else ["?", "?", "?"]
+                p_vals = get_three_digit_raw_list(df, r_p, col_start) if col_start is not None else ["?", "?", "?"]
+                
+                # 上顎位點擺放格式
+                line1 = f"DB {b_vals[2]}{b_vals[1]}{b_vals[0]} MB" if tooth // 10 == 1 else f"MB {b_vals[0]}{b_vals[1]}{b_vals[2]} DB"
+                line2 = f"DP {p_vals[2]}{p_vals[1]}{p_vals[0]} MP" if tooth // 10 == 1 else f"MP {p_vals[0]}{p_vals[1]}{p_vals[2]} DP"
+            else:
+                r_l = row_map.get("lo_l_pd_i")
+                r_b = row_map.get("lo_b_pd_i")
+                l_vals = get_three_digit_raw_list(df, r_l, col_start) if col_start is not None else ["?", "?", "?"]
+                b_vals = get_three_digit_raw_list(df, r_b, col_start) if col_start is not None else ["?", "?", "?"]
+                
+                # 下顎位點擺放格式
+                line1 = f"DL {l_vals[2]}{l_vals[1]}{l_vals[0]} ML" if tooth // 10 == 4 else f"ML {l_vals[0]}{l_vals[1]}{l_vals[2]} DL"
+                line2 = f"DB {b_vals[2]}{b_vals[1]}{b_vals[0]} MB" if tooth // 10 == 4 else f"MB {b_vals[0]}{b_vals[1]}{b_vals[2]} DB"
+
+            tooth_details[tooth] = (line1, line2)
+
+    if not flagged_teeth:
+        return f" 3. Probing depth >={threshold}mm: nil"
+
+    teeth_str = " ".join(map(str, flagged_teeth))
+    out = [f" 3. Probing depth >={threshold}mm: tooth {teeth_str}\n"]
+
+    # 🚀 將牙齒依象限 1, 2, 3, 4 分組
+    quadrants = {1: [], 2: [], 3: [], 4: []}
+    for t in flagged_teeth:
+        quad = t // 10
+        if quad in quadrants:
+            quadrants[quad].append(t)
+
+    # 按象限順序逐個輸出
+    for q in [1, 2, 3, 4]:
+        q_teeth = quadrants[q]
+        if not q_teeth:
+            continue
+        
+        # 每排最多 4 顆牙
+        for i in range(0, len(q_teeth), 4):
+            chunk = q_teeth[i:i+4]
+            header = "".join([f"tooth {t:<12}" for t in chunk])
+            l1 = "".join([f"   {tooth_details[t][0]:<15}" for t in chunk])
+            l2 = "".join([f"   {tooth_details[t][1]:<15}" for t in chunk])
+
+            out.append(header)
+            out.append(l1)
+            out.append(l2)
+            out.append("")  # 空行分隔象限
+
+    return "\n".join(out)
+
+
 def format_furcation_section(df: pd.DataFrame, missing_teeth: set) -> str:
     """
     生成 5. Furcation 上下顎報告
-    動態讀取數值上面一列的 Label 文字來精準判斷方位 (如 M1, B1, D1, L1)
+    🚀 動態讀取 Label，並強制排序：上顎(M->B->D)，下顎(B->L)
     """
     furc_rows = find_furcation_rows(df)
     tooth_rows = find_tooth_rows(df)
 
     upper_furc, lower_furc = [], []
+
+    # 🚀 位點排序字典定義
+    up_order = {"M": 1, "B": 2, "D": 3, "P": 4, "L": 5}
+    lo_order = {"B": 1, "L": 2, "M": 3, "D": 4, "P": 5}
 
     if furc_rows and tooth_rows:
         up_cols = get_tooth_start_columns(df, tooth_rows[0])
@@ -314,7 +398,9 @@ def format_furcation_section(df: pd.DataFrame, missing_teeth: set) -> str:
         up_info = furc_rows[0] if len(furc_rows) > 0 else None
         lo_info = furc_rows[-1] if len(furc_rows) > 1 else None
 
-        # 1. 處理上顎 Upper Furcation
+        # ----------------------------------------------------
+        # 1. 上顎 Upper Furcation (M -> B -> D)
+        # ----------------------------------------------------
         if up_info and up_info["value_row"] < len(df):
             r_val = up_info["value_row"]
             r_label = up_info["label_row"]
@@ -322,7 +408,7 @@ def format_furcation_section(df: pd.DataFrame, missing_teeth: set) -> str:
             for t in sorted(up_cols.keys()):
                 if t not in missing_teeth:
                     c = up_cols[t]
-                    f_str = ""
+                    site_list = []
                     for offset in range(3):
                         curr_col = c + offset
                         if curr_col < df.shape[1]:
@@ -332,12 +418,18 @@ def format_furcation_section(df: pd.DataFrame, missing_teeth: set) -> str:
                             if v_clean in ['1', '2', '3', 'I', 'II', 'III']:
                                 grade_num = "1" if v_clean == "I" else ("2" if v_clean == "II" else ("3" if v_clean == "III" else v_clean))
                                 site_code = get_site_code_from_label_cell(df, r_label, curr_col)
-                                f_str += f"{site_code}{grade_num}"
+                                if site_code:
+                                    site_list.append((site_code, grade_num))
 
-                    if f_str:
+                    if site_list:
+                        # 按 M -> B -> D 排序
+                        site_list.sort(key=lambda x: up_order.get(x[0], 99))
+                        f_str = "".join([f"{code}{grade}" for code, grade in site_list])
                         upper_furc.append(f"{t}({f_str})")
 
-        # 2. 處理下顎 Lower Furcation
+        # ----------------------------------------------------
+        # 2. 下顎 Lower Furcation (B -> L)
+        # ----------------------------------------------------
         if lo_info and lo_info["value_row"] < len(df):
             r_val = lo_info["value_row"]
             r_label = lo_info["label_row"]
@@ -345,7 +437,7 @@ def format_furcation_section(df: pd.DataFrame, missing_teeth: set) -> str:
             for t in sorted(lo_cols.keys()):
                 if t not in missing_teeth:
                     c = lo_cols[t]
-                    f_str = ""
+                    site_list = []
                     for offset in range(3):
                         curr_col = c + offset
                         if curr_col < df.shape[1]:
@@ -355,9 +447,13 @@ def format_furcation_section(df: pd.DataFrame, missing_teeth: set) -> str:
                             if v_clean in ['1', '2', '3', 'I', 'II', 'III']:
                                 grade_num = "1" if v_clean == "I" else ("2" if v_clean == "II" else ("3" if v_clean == "III" else v_clean))
                                 site_code = get_site_code_from_label_cell(df, r_label, curr_col)
-                                f_str += f"{site_code}{grade_num}"
+                                if site_code:
+                                    site_list.append((site_code, grade_num))
 
-                    if f_str:
+                    if site_list:
+                        # 按 B -> L 排序
+                        site_list.sort(key=lambda x: lo_order.get(x[0], 99))
+                        f_str = "".join([f"{code}{grade}" for code, grade in site_list])
                         lower_furc.append(f"{t}({f_str})")
 
     str_up = " ".join(upper_furc) if upper_furc else "nil"
